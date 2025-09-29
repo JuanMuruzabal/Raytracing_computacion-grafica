@@ -1,6 +1,6 @@
 import moderngl
 
-from src import texture
+from . import texture
 from .shader_program import ShaderProgram
 import numpy as np
 
@@ -30,22 +30,35 @@ class Graphics:
        return buffers
 
     def load_textures(self, textures_data):
-        textures = []
+        textures = {}  # Cambia de lista a diccionario
         for texture in textures_data:
             if texture.image_data:
-                texture_ctx = self.__ctx.texture(texture.size, texture.channels_amount, texture.image_data)
+                texture_ctx = self.__ctx.texture(
+                    texture.size,
+                    texture.channels_amount,
+                    texture.image_data.tobytes() if hasattr(texture.image_data, "tobytes") else texture.image_data
+                )
                 if texture_ctx.build_mipmaps:
-                   texture_ctx.build_mipmaps()
-                   texture_ctx.repeat_x = texture.repeat_x
-                   texture_ctx.repeat_y = texture.repeat_y
-                   textures.append((texture.name, texture_ctx))
+                    texture_ctx.build_mipmaps()
+                texture_ctx.repeat_x = texture.repeat_x
+                texture_ctx.repeat_y = texture.repeat_y
+                textures[texture.name] = (texture.name, texture_ctx)
         return textures
-    
+    # Esta función fue cambiada: ahora usa un diccionario y asegura que los datos sean bytes.
+
     def render(self, uniforms):
         for name, value in uniforms.items():
             if name in self.__material.shader_program.program:
                 self.__material.set_uniform(name, value)
-        for i, (name, texture) in enumerate(self.__textures):
+        for i, (name, texture) in enumerate(self.__textures.values()):  # Usa .values() para iterar
             texture.use(location=i)
             self.__material.shader_program.set_uniform(name, i)
         self.__vao.render()
+    
+    def update_texture(self, texture_name, new_data):
+        if texture_name not in self.__textures:
+            return ValueError(f"Texture {texture_name} not found")
+        
+        _, texture_ctx = self.__textures[texture_name]
+        texture_ctx.write(new_data.tobytes() if hasattr(new_data, "tobytes") else new_data)
+    # Esta función fue cambiada: ahora solo sube los datos nuevos, eliminando errores de métodos inexistentes.

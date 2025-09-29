@@ -10,7 +10,22 @@ class Camera:
         self.aspect = aspect
         self.near = near
         self.far = far
-        
+        self.__sky_color_top = None
+        self.__sky_color_bottom = None
+
+    def set_sky_colors(self, top, bottom):
+        self.__sky_color_top = glm.vec3(*top[:3])      # Solo RGB
+        self.__sky_color_bottom = glm.vec3(*bottom[:3])# Solo RGB
+    
+    def get_sky_gradient(self, height):
+        point = pow(0.5 * (height + 1.0), 1.5)
+        color = (1.0 - point) * self.__sky_color_bottom + point * self.__sky_color_top
+        # Convierte a tupla RGBA (entero 0-255)
+        r = int(max(0, min(255, color.x)))
+        g = int(max(0, min(255, color.y)))
+        b = int(max(0, min(255, color.z)))
+        return (r, g, b, 255)
+    # Esta función fue cambiada: ahora retorna RGBA para evitar errores de broadcasting.
         
     @property
     def aspect_ratio(self):

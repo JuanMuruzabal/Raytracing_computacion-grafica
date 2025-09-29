@@ -90,5 +90,10 @@ class Window(pyglet.window.Window):
                 picked = obj
         return picked
 
+    def set_scene(self, scene):
+        self.scene = scene
+        scene.start()
+       
+
     def run(self):
         pyglet.app.run()
