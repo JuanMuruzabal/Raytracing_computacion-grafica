@@ -9,7 +9,7 @@ class Graphics:
         self.__ctx = ctx
         self.__model = model
         self.__material = material
-        self.prog = self.__material.shader_program.program
+      
         self.__vbo = self.create_buffers()
         self.__ibo = self.__ctx.buffer(model.indices.tobytes())
         self.__vao = self.__ctx.vertex_array(

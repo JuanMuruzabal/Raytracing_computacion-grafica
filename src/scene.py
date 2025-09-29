@@ -9,6 +9,9 @@ class Scene:
         self.camera = camera
         self.time = 0.0
         self.graphics = {}
+        self.projection = self.camera.get_perspective_matrix()
+        self.view = self.camera.get_view_matrix()
+        
         
     def add_object(self, obj, material):
         self.objects.append((obj, material))
@@ -17,9 +20,6 @@ class Scene:
         
     def render(self):
         self.time += 0.01
-        # Update projection and view matrices from camera
-        self.projection = self.camera.get_perspective_matrix()
-        self.view = self.camera.get_view_matrix()
         
         for obj, material in self.objects:
             if obj.name != "Sprite":
