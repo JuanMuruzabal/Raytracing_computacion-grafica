@@ -3,13 +3,21 @@ class Material:
         self.shader_program = shader_program
         self.textures_data = textures_data
 
-        @property
-        def shader_program(self):
-            return self.__shader_program
+    @property
+    def shader_program(self):
+        return self._shader_program
 
-        @property
-        def textures_data(self):
-            return self.__textures_data
+    @shader_program.setter
+    def shader_program(self, value):
+        self._shader_program = value
 
-        def set_uniform(self, name, value):
-            self.__shader_program.set_uniform(name, value)
+    @property
+    def textures_data(self):
+        return self._textures_data
+
+    @textures_data.setter
+    def textures_data(self, value):
+        self._textures_data = value
+
+    def set_uniform(self, name, value):
+        self.shader_program.set_uniform(name, value)

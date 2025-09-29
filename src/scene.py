@@ -13,7 +13,7 @@ class Scene:
     def add_object(self, obj, material):
         self.objects.append((obj, material))
         # Create graphics for this object
-        self.graphics[obj.name] = Graphics(self.window.ctx, obj, material)
+        self.graphics[obj.name] = Graphics(self.window, obj, material)
         
     def render(self):
         self.time += 0.01
