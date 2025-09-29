@@ -27,10 +27,6 @@ class Camera:
     def get_perspective_matrix(self):
         return glm.perspective(glm.radians(self.fov), self.aspect, self.near, self.far)
     
-    def get_projection_matrix(self):
-        # Alias para compatibilidad con Scene
-        return self.get_perspective_matrix()
-    
     def get_view_matrix(self):
         return glm.lookAt(self.position, self.target, self.up)
     

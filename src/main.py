@@ -26,7 +26,8 @@ def main():
     quad = Quad((0, 0, 0), (0, 0, 0), (6, 5, 1), "Sprite")
 
     camera = Camera((0, 0, 6), (0, 0, 0), (0, 1, 0), 45, window.width / window.height, 0.1, 100)
-    scene = Scene(window.ctx, camera)
+    scene = Scene(window, camera)
+    
     scene.add_object(quad, material_sprite)
     scene.add_object(cube1, material)
     scene.add_object(cube2, material)
@@ -40,9 +41,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    
-
-
-
- 

@@ -13,12 +13,12 @@ class Scene:
     def add_object(self, obj, material):
         self.objects.append((obj, material))
         # Create graphics for this object
-        self.graphics[obj.name] = Graphics(self.window, obj, material)
+        self.graphics[obj.name] = Graphics(self.window.ctx, obj, material)
         
     def render(self):
         self.time += 0.01
         # Update projection and view matrices from camera
-        self.projection = self.camera.get_projection_matrix()
+        self.projection = self.camera.get_perspective_matrix()
         self.view = self.camera.get_view_matrix()
         
         for obj, material in self.objects:
