@@ -30,25 +30,47 @@ class HitBoxOBB(Hit):
         super().__init__(get_model_matrix, hittable)
 
     def check_hit(self, origin, direction):
-       if(not self.hittable):
-           return False
-       else: 
-         origin = glm.vec3(*origin)
-         direction = glm.normalize(glm.vec3(*direction))
-
-         min_bounds = self.position - self.scale
-         max_bounds = self.position + self.scale
-
-         t_min = (min_bounds - origin) / direction
-         t_max = (max_bounds - origin) / direction
-
-         t1 = glm.min(t_min, t_max)
-         t2 = glm.max(t_min, t_max)
-
-         t_near = glm.max(t1.x, t1.y, t1.z)
-         t_far = glm.min(t2.x, t2.y, t2.z)
-
-         return t_near <= t_far and t_far >= 0
+        if not self.hittable:
+            return False
+        
+        origin = glm.vec3(*origin)
+        direction = glm.normalize(glm.vec3(*direction))
+        
+        min_bounds = self.position - self.scale
+        max_bounds = self.position + self.scale
+        
+        # Proper ray-AABB intersection algorithm
+        tmin = (min_bounds.x - origin.x) / direction.x
+        tmax = (max_bounds.x - origin.x) / direction.x
+        
+        if tmin > tmax:
+            tmin, tmax = tmax, tmin
+            
+        tymin = (min_bounds.y - origin.y) / direction.y
+        tymax = (max_bounds.y - origin.y) / direction.y
+        
+        if tymin > tymax:
+            tymin, tymax = tymax, tymin
+            
+        if tmin > tymax or tymin > tmax:
+            return False
+            
+        tmin = max(tmin, tymin)
+        tmax = min(tmax, tymax)
+        
+        tzmin = (min_bounds.z - origin.z) / direction.z
+        tzmax = (max_bounds.z - origin.z) / direction.z
+        
+        if tzmin > tzmax:
+            tzmin, tzmax = tzmax, tzmin
+            
+        if tmin > tzmax or tzmin > tmax:
+            return False
+            
+        tmin = max(tmin, tzmin)
+        tmax = min(tmax, tzmax)
+        
+        return tmax >= max(0, tmin)
 
 class Hitbox(Hit):
     def __init__(self, position=(0,0,0), scale=(1,1,1), hittable=True):
@@ -71,23 +93,44 @@ class Hitbox(Hit):
         return self._scale
 
     def check_hit(self, origin, direction):
-      
-         if(not self.hittable):
-              return False
-         else: 
-            origin = glm.vec3(*origin)
-            direction = glm.normalize(glm.vec3(*direction))
-    
-            min_bounds = self.position - self.scale
-            max_bounds = self.position + self.scale
-    
-            t_min = (min_bounds - origin) / direction
-            t_max = (max_bounds - origin) / direction
-    
-            t1 = glm.min(t_min, t_max)
-            t2 = glm.max(t_min, t_max)
-    
-            t_near = glm.max(t1.x, t1.y, t1.z)
-            t_far = glm.min(t2.x, t2.y, t2.z)
-    
-            return t_near <= t_far and t_far >= 0
+        if not self.hittable:
+            return False
+        
+        origin = glm.vec3(*origin)
+        direction = glm.normalize(glm.vec3(*direction))
+        
+        min_bounds = self.position - self.scale
+        max_bounds = self.position + self.scale
+        
+        # Proper ray-AABB intersection algorithm
+        tmin = (min_bounds.x - origin.x) / direction.x
+        tmax = (max_bounds.x - origin.x) / direction.x
+        
+        if tmin > tmax:
+            tmin, tmax = tmax, tmin
+            
+        tymin = (min_bounds.y - origin.y) / direction.y
+        tymax = (max_bounds.y - origin.y) / direction.y
+        
+        if tymin > tymax:
+            tymin, tymax = tymax, tymin
+            
+        if tmin > tymax or tymin > tmax:
+            return False
+            
+        tmin = glm.max(glm.vec3(tmin, tymin, 0))
+        tmax = glm.min(glm.vec3(tmax, tymax, 0))
+        
+        tzmin = (min_bounds.z - origin.z) / direction.z
+        tzmax = (max_bounds.z - origin.z) / direction.z
+        
+        if tzmin > tzmax:
+            tzmin, tzmax = tzmax, tzmin
+            
+        if tmin > tzmax or tzmin > tmax:
+            return False
+            
+        tmin = glm.max(glm.vec3(tmin, tzmin, 0))
+        tmax = glm.min(glm.vec3(tmax, tzmax, 0))
+        
+        return tmax >= glm.max(glm.vec3(0, tmin, 0))

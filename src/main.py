@@ -31,7 +31,6 @@ def main():
 
     cube1 = Cube((-2, 0, 0), (0, 45, 0), (1, 1, 1), "Cube1")
     cube2 = Cube((2, 0, 0), (0, -45, 0), (1, 0.5, 1), "Cube2")
-    cube3 = Cube((0, -2, 0), (0, 0, 0), (0.3, 0.3, 0.3), "Cube3")  # Esta línea fue agregada: cubo pequeño abajo del quaddad
     quad = Quad((0, 0, 0), (0, 0, 0), (6, 5, 1), "Sprite", hittable=False)
     # Esta línea fue cambiada: se agregó hittable=False para que el quad no bloquee todos los rayos.
 
@@ -40,14 +39,13 @@ def main():
     scene.add_object(quad, material_sprite)
     scene.add_object(cube1, material)
     scene.add_object(cube2, material)
-    scene.add_object(cube3, material)  # Esta línea fue agregada: agrega el cubo pequeño a la escena
+
     
     window.set_scene(scene)
     # Esta línea fue cambiada: se usa set_scene para inicializar la escena y llamar a start().
     
     window.run()
-    print("Cube3 position:", cube3.position, "scale:", cube3.scale)  # Imprime la posición y escala del cubo pequeño
-
+    
 
 if __name__ == "__main__":
     main()
