@@ -22,8 +22,8 @@ def main():
     skybox_texture = Texture(
         width=WIDTH,
         height=HEIGHT,
-        channels_amount=4,
-        image_Data=ImageData(WIDTH, HEIGHT, 4, color=(120, 175, 195, 255))
+        channels_amount=3,
+        color= (0, 0, 0)
     )  # Estas líneas fueron cambiadas: ahora la textura tiene el mismo tamaño que el framebuffer del raytracer.
 
     material = Material(shader_program)
@@ -35,7 +35,7 @@ def main():
     # Esta línea fue cambiada: se agregó hittable=False para que el quad no bloquee todos los rayos.
 
     camera = Camera((0, 0, 6), (0, 0, 0), (0, 1, 0), 45, window.width / window.height, 0.1, 100)
-    scene = RayScene(window, camera, window.width, window.height)  # Usa window, no window.ctx
+    scene = RayScene(window, camera, WIDTH, HEIGHT)  
     scene.add_object(quad, material_sprite)
     scene.add_object(cube1, material)
     scene.add_object(cube2, material)

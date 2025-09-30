@@ -10,8 +10,8 @@ class ImageData:
     
 
 class Texture:
-    def __init__(self, name = "u_texture", width=1, height=1, channels_amount = 4, image_Data:ImageData = None,
-                 color= (0,0,0,0), repeat_x = False, repeat_y = False, build_mipmaps = False):
+    def __init__(self, name = "u_texture", width=1, height=1, channels_amount = 3, image_Data:ImageData = None,
+                 color= (0,0,0), repeat_x = False, repeat_y = False, build_mipmaps = False):
         self.name = name
         self.size = (width, height)
         self.channels_amount = channels_amount
@@ -22,10 +22,10 @@ class Texture:
         self.width = width
         self.height = height
 
-        if image_Data is None:
-            self._image_data = ImageData(width, height, channels_amount, color)  # <-- crea ImageData por defecto
-        else:
+        if image_Data is not None:
             self._image_data = image_Data
+        else:
+            self._image_data = ImageData(width, height, channels_amount, color)
 
     @property
     def image_data(self):

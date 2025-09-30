@@ -24,7 +24,6 @@ class Scene:
 
     def render(self):
         self.time += 0.01
-        
         for obj, material in self.objects:
             if obj.name != "Sprite":
                 obj.rotation += glm.vec3(0.8, 0.6, 0.4) 
@@ -47,8 +46,8 @@ class Scene:
             self.camera.aspect_ratio = width / height
 
 class RayScene(Scene):
-    def __init__(self, window, camera, width, height):
-        super().__init__(window, camera)
+    def __init__(self, ctx, camera, width, height):
+        super().__init__(ctx, camera)
         self.raytracer = RayTracer(camera, width, height)
 
     def start(self):

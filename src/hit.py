@@ -32,45 +32,19 @@ class HitBoxOBB(Hit):
     def check_hit(self, origin, direction):
         if not self.hittable:
             return False
-        
-        origin = glm.vec3(*origin)
-        direction = glm.normalize(glm.vec3(*direction))
-        
-        min_bounds = self.position - self.scale
-        max_bounds = self.position + self.scale
-        
-        # Proper ray-AABB intersection algorithm
-        tmin = (min_bounds.x - origin.x) / direction.x
-        tmax = (max_bounds.x - origin.x) / direction.x
-        
-        if tmin > tmax:
-            tmin, tmax = tmax, tmin
-            
-        tymin = (min_bounds.y - origin.y) / direction.y
-        tymax = (max_bounds.y - origin.y) / direction.y
-        
-        if tymin > tymax:
-            tymin, tymax = tymax, tymin
-            
-        if tmin > tymax or tymin > tmax:
-            return False
-            
-        tmin = max(tmin, tymin)
-        tmax = min(tmax, tymax)
-        
-        tzmin = (min_bounds.z - origin.z) / direction.z
-        tzmax = (max_bounds.z - origin.z) / direction.z
-        
-        if tzmin > tzmax:
-            tzmin, tzmax = tzmax, tzmin
-            
-        if tmin > tzmax or tzmin > tmax:
-            return False
-            
-        tmin = max(tmin, tzmin)
-        tmax = min(tmax, tzmax)
-        
-        return tmax >= max(0, tmin)
+        origin = glm.vec3(origin)
+        direction = glm.normalize(glm.vec3(direction))
+
+        tmin = (self.position - self.scale - origin) / direction
+        tmax = (self.position + self.scale - origin) / direction
+
+        t1 = glm.min(tmin, tmax)
+        t2 = glm.max(tmin, tmax)
+
+        t_near = max(t1.x, t1.y, t1.z)
+        t_far = min(t2.x, t2.y, t2.z)
+
+        return t_near <= t_far and t_far >= 0
 
 class Hitbox(Hit):
     def __init__(self, position=(0,0,0), scale=(1,1,1), hittable=True):
