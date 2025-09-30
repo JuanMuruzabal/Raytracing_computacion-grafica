@@ -10,7 +10,7 @@ class RayTracer:
         self.camera.set_sky_colors(top=(16,150,222), bottom=(181,224,247))
 
     def trace_ray(self, ray, objects):
-        for obj, material in objects:  # desempaqueta el tuple
+        for obj in objects:  # desempaqueta el tuple
             if obj.check_hit(ray.origin, ray.direction):
                 return (255,0,0)
         height = ray.direction.y

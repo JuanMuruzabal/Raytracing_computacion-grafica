@@ -12,7 +12,7 @@ class Quad(Model):
         self.rotation = glm.vec3(*rotation)
         self.scale = glm.vec3(*scale)
         self.__colision = HitBoxOBB(get_model_matrix = lambda: self.get_model_matrix(), hittable=hittable)
-    # Esta línea fue cambiada: ahora puedes pasar hittable=False para que el quad no bloquee los rayos.
+    
    
 
         vertices = np.array([

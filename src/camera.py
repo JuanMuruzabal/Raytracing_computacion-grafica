@@ -14,8 +14,8 @@ class Camera:
         self.__sky_color_bottom = None
 
     def set_sky_colors(self, top, bottom):
-        self.__sky_color_top = glm.vec3(*top[:3])      # Solo RGB
-        self.__sky_color_bottom = glm.vec3(*bottom[:3])# Solo RGB
+        self.__sky_color_top = glm.vec3(*top)      # Solo RGB
+        self.__sky_color_bottom = glm.vec3(*bottom)# Solo RGB
     
     def get_sky_gradient(self, height):
         point = pow(0.5 * (height + 1.0), 1.5)

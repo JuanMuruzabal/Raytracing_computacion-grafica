@@ -29,13 +29,13 @@ def main():
     material = Material(shader_program)
     material_sprite = Material(shader_program_skybox, textures_data = [skybox_texture])
 
-    cube1 = Cube((-2, 0, 0), (0, 45, 0), (1, 1, 1), "Cube1")
-    cube2 = Cube((2, 0, 0), (0, -45, 0), (1, 0.5, 1), "Cube2")
-    quad = Quad((0, 0, 0), (0, 0, 0), (6, 5, 1), "Sprite", hittable=False)
+    cube1 = Cube((-2, 0, 1), (0, 45, 0), (1, 1, 1), "Cube1")
+    cube2 = Cube((2, 0, 1), (0, -45, 0), (1, 0.5, 1), "Cube2")
+    quad = Quad((0, 0, 0), (0, 0, 0), (5.5, 4.5, 0.5), "Sprite", hittable=False)
     # Esta línea fue cambiada: se agregó hittable=False para que el quad no bloquee todos los rayos.
 
     camera = Camera((0, 0, 6), (0, 0, 0), (0, 1, 0), 45, window.width / window.height, 0.1, 100)
-    scene = RayScene(window, camera, WIDTH, HEIGHT)  
+    scene = RayScene(window.ctx, camera, WIDTH, HEIGHT)  
     scene.add_object(quad, material_sprite)
     scene.add_object(cube1, material)
     scene.add_object(cube2, material)

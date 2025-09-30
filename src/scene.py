@@ -4,27 +4,28 @@ from .graphics import Graphics
 from .raytracer import RayTracer
 
 class Scene:
-    def __init__(self, window, camera):
-        self.window = window
+    def __init__(self, ctx, camera):
+        self.ctx = ctx
         self.objects = []
         self.camera = camera
         self.time = 0.0
         self.graphics = {}
         self.projection = self.camera.get_perspective_matrix()
         self.view = self.camera.get_view_matrix()
-    
-    
-    def add_object(self, obj, material):
-        self.objects.append((obj, material))
+
+
+    def add_object(self, obj, material=None):
+        self.objects.append(obj)
         # Create graphics for this object
-        self.graphics[obj.name] = Graphics(self.window.ctx, obj, material)
+        self.graphics[obj.name] = Graphics(self.ctx, obj, material)
+
         
     def start(self):
         print("Start!")
 
     def render(self):
         self.time += 0.01
-        for obj, material in self.objects:
+        for obj in self.objects:
             if obj.name != "Sprite":
                 obj.rotation += glm.vec3(0.8, 0.6, 0.4) 
                 obj.position.x += math.sin(self.time) * 0.01
@@ -36,7 +37,7 @@ class Scene:
 
     def on_mouse_click(self, u, v):
         ray = self.camera.raycast(u, v)
-        for obj, material in self.objects:
+        for obj in self.objects:
             if obj.check_hit(ray.origin, ray.direction):
                 print(f"Golpeaste al chaval tio: {obj.name}")
                 
