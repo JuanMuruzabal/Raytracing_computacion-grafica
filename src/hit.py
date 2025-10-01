@@ -35,6 +35,7 @@ class HitBoxOBB(Hit):
         
         origin = glm.vec3(origin)
         direction = glm.normalize(glm.vec3(direction))
+        
         inv_model = glm.inverse(self.model_matrix)
         local_origin = inv_model * glm.vec4(origin, 1.0)
         local_dir = inv_model * glm.vec4(direction, 0.0)
