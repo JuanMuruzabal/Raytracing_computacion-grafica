@@ -19,7 +19,7 @@ class ShaderProgram:
                 uniforms.append(name)
 
        self.attributes = list(attributes)
-       self.uniforms = list(uniforms)
+       self.uniforms = uniforms
 
 
     def set_uniform(self,name,value):

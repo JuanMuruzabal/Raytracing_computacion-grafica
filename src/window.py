@@ -82,13 +82,18 @@ class Window(pyglet.window.Window):
         min_dist = float('inf')
         picked = None
         for obj_tuple in self.scene.objects:
-            obj, material = obj_tuple  # Unpack the tuple (obj, material)
+            obj = obj_tuple  # Unpack the tuple (obj, material)
             pos = obj.position
             dist = glm.length(pos - glm.vec3(0, 0, 0))
             if dist < min_dist:
                 min_dist = dist
                 picked = obj
         return picked
+
+    def set_scene(self, scene):
+        self.scene = scene
+        scene.start()
+       
 
     def run(self):
         pyglet.app.run()
