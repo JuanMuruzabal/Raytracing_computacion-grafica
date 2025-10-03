@@ -10,11 +10,20 @@ class RayTracer:
         self.camera.set_sky_colors(top=(16,150,222), bottom=(181,224,247))
 
     def trace_ray(self, ray, objects):
-        for obj in objects:  # desempaqueta el tuple
-            if obj.check_hit(ray.origin, ray.direction):
-                return (255,0,0)
+        closest_dist = float("inf")
+        hit_any = False
+        for obj in objects:
+            hit, dist, point = obj.check_hit(ray.origin, ray.direction)
+            if hit and dist < closest_dist:
+                closest_dist = dist
+                hit_any = True
+
+        if hit_any:
+            return (255, 0, 0)
+
         height = ray.direction.y
         return self.camera.get_sky_gradient(height)
+
 
     def render_frame(self, objects):
         hit_count = 0

@@ -31,11 +31,11 @@ class HitBoxOBB(Hit):
 
     def check_hit(self, origin, direction):
         if not self.hittable:
-            return False
-        
+            return False, None, None
+
         origin = glm.vec3(origin)
         direction = glm.normalize(glm.vec3(direction))
-        
+
         inv_model = glm.inverse(self.model_matrix)
         local_origin = inv_model * glm.vec4(origin, 1.0)
         local_dir = inv_model * glm.vec4(direction, 0.0)
@@ -55,7 +55,14 @@ class HitBoxOBB(Hit):
         t_near = max(t1.x, t1.y, t1.z)
         t_far = min(t2.x, t2.y, t2.z)
 
-        return t_near <= t_far and t_far >= 0
+        if t_near <= t_far and t_far >= 0:
+            # Calculamos el punto exacto de impacto en coordenadas locales
+            local_hit_point = local_origin + t_near * local_dir
+            # Transformamos de vuelta al espacio global
+            world_hit_point = self.model_matrix * glm.vec4(local_hit_point, 1.0)
+            return True, t_near, glm.vec3(world_hit_point)
+
+        return False, None, None
 
 class Hitbox(Hit):
     def __init__(self, position=(0,0,0), scale=(1,1,1), hittable=True):

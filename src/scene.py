@@ -34,13 +34,15 @@ class Scene:
             mvp = self.projection * self.view * model
             self.graphics[obj.name].render({"Mvp": mvp})
         
-
+                
     def on_mouse_click(self, u, v):
         ray = self.camera.raycast(u, v)
         for obj in self.objects:
-            if obj.check_hit(ray.origin, ray.direction):
-                print(f"Golpeaste al chaval tio: {obj.name}")
-                
+            hit, dist, point = obj.check_hit(ray.origin, ray.direction)
+            if hit:
+                print(f"Impacto en {obj.name}")
+                print(f" → Distancia: {dist:.2f}")
+                print(f" → Punto: ({point.x:.2f}, {point.y:.2f}, {point.z:.2f})")
 
     def on_resize(self, width, height):
         if self.camera:
