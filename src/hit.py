@@ -56,10 +56,10 @@ class HitBoxOBB(Hit):
         t_far = min(t2.x, t2.y, t2.z)
 
         if t_near <= t_far and t_far >= 0:
-            # Calculamos el punto exacto de impacto en coordenadas locales
+            
             local_hit_point = local_origin + t_near * local_dir
-            # Transformamos de vuelta al espacio global
             world_hit_point = self.model_matrix * glm.vec4(local_hit_point, 1.0)
+            
             return True, t_near, glm.vec3(world_hit_point)
 
         return False, None, None

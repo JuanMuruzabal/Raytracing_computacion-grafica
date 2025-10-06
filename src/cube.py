@@ -9,8 +9,9 @@ import glm
 
 class Cube(Model):
 
-    def __init__(self, position=(0,0,0), rotation=(0,0,0), scale=(1,1,1), name="cube", hittable=True):
+    def __init__(self, position=(0,0,0), rotation=(0,0,0), scale=(1,1,1), name="cube", animated=True, hittable=True):
         self.name = name
+        self.animated = animated 
         self.position = glm.vec3(*position)
         self.rotation = glm.vec3(*rotation)
         self.scale = glm.vec3(*scale)
@@ -44,8 +45,20 @@ class Cube(Model):
             3,2,6, 6,7,3, 0,1,5, 5,4,0
         ], dtype='i4')
 
+        self.__vertices = vertices
+
         super().__init__(vertices, indices, colors, normals, texcoords)
 
+    @property
+    def aabb(self):
+        verts3 = self.__vertices.reshape(-1, 3)
+
+        pts =[self.get_model_matrix() * glm.vec4(v[0], v[1], v[2], 1.0) for v in verts3]
+        xs = [p.x for p in pts]
+        ys = [p.y for p in pts]
+        zs = [p.z for p in pts]
+        return (glm.vec3(min(xs), min(ys), min(zs)), glm.vec3(max(xs), max(ys), max(zs))
+                )
 
     def check_hit(self, origin, direction):
         return self.__colision.check_hit(origin, direction)

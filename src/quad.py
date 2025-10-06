@@ -6,8 +6,9 @@ import glm
 
 class Quad(Model):
 
-    def __init__(self, position=(0,0,0), rotation=(0,0,0), scale=(1,1,1), name="quad", hittable=True):
+    def __init__(self, position=(0,0,0), rotation=(0,0,0), scale=(1,1,1), name="quad", animated=True, hittable=True):
         self.name = name
+        self.animated = animated
         self.position = glm.vec3(*position)
         self.rotation = glm.vec3(*rotation)
         self.scale = glm.vec3(*scale)

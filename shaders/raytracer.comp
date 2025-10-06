@@ -1,0 +1,280 @@
+#version 430
+
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(rgba32f, binding = 0) uniform image2D outputImage;
+
+layout(std430, binding = 0) buffer Models { mat4 modelMatrices[]; };
+layout(std430, binding = 1) buffer InvModels { mat4 inverseModelMatrices[]; };
+layout(std430, binding = 2) buffer Materials { vec4 materialData[]; };
+layout(std430, binding = 3) buffer BVH { vec4 bvhNodes[]; };
+
+uniform vec3 cameraPosition;
+uniform mat4 inverseViewMatrix;
+uniform float fieldOfView;
+const float EPS = 1e-4;
+const int MAX_RAY_BOUNCES = 3;
+const vec3 LIGHT_DIRECTION = normalize(vec3(0.5, 1.0, 0.1));
+const vec3 LIGHT_COLOR = vec3(1.0, 1.0, 1.0);
+
+struct RayHit {
+
+    bool didHit;
+    float distance;
+    vec3 position;
+    vec3 normal;
+    vec3 color;
+    float reflectivity;
+};
+
+bool intersectAxisAlignedBox(vec3 rayOrigin, vec3 rayDirection,
+                             vec3 boxMin, vec3 boxMax,
+                             out float timeNear, out float timeFar) {
+    vec3 timeAtMinPlane = (boxMin - rayOrigin) / rayDirection;
+    vec3 timeAtMaxPlane = (boxMax - rayOrigin) / rayDirection;
+    vec3 timeMin = min(timeAtMinPlane, timeAtMaxPlane);
+    vec3 timeMax = max(timeAtMinPlane, timeAtMaxPlane);
+    timeNear = max(max(timeMin.x, timeMin.y), timeMin.z);
+    timeFar = min(min(timeMax.x, timeMax.y), timeMax.z);
+    return timeFar >= max(timeNear, 0.0);
+}
+
+bool intersectOrientedBox(int objectIndex, vec3 rayOriginWorld, vec3 rayDirectionWorld,
+
+                          out float hitDistance, out vec3 hitPosition, out vec3 hitNormal, out vec3 hitColor, out float hitReflectivity) {
+
+    mat4 inverseTransform = inverseModelMatrices[objectIndex];
+
+    vec3 rayOriginLocal = (inverseTransform * vec4(rayOriginWorld, 1.0)).xyz;
+
+    vec3 rayDirectionLocal = normalize((inverseTransform * vec4(rayDirectionWorld, 0.0)).xyz);
+
+
+    float timeNear, timeFar;
+
+    vec3 boxMinLocal = vec3(-0.5);
+
+    vec3 boxMaxLocal = vec3(0.5);
+
+    bool intersects = intersectAxisAlignedBox(rayOriginLocal, rayDirectionLocal, boxMinLocal, boxMaxLocal, timeNear, timeFar);
+
+   
+
+    if (!intersects) return false;
+
+
+    float timeLocal = (timeNear > EPS) ? timeNear : timeFar;
+
+    vec3 hitPositionLocal = rayOriginLocal + rayDirectionLocal * timeLocal;
+
+
+    vec3 distanceToPositiveFaces = abs(hitPositionLocal - vec3(0.5));
+
+    vec3 distanceToNegativeFaces = abs(hitPositionLocal + vec3(0.5));
+
+    vec3 minDistance = min(distanceToPositiveFaces, distanceToNegativeFaces);
+
+    float closestFaceDistance = min(min(minDistance.x, minDistance.y), minDistance.z);
+
+   
+
+    vec3 normalLocal = vec3(0.0);
+
+    if (minDistance.x == closestFaceDistance)
+
+        normalLocal = vec3(sign(hitPositionLocal.x), 0, 0);
+
+    else if (minDistance.y == closestFaceDistance)
+
+        normalLocal = vec3(0, sign(hitPositionLocal.y), 0);
+
+    else
+
+        normalLocal = vec3(0, 0, sign(hitPositionLocal.z));
+
+
+    mat3 normalTransform = transpose(inverse(mat3(modelMatrices[objectIndex])));
+
+    hitNormal = normalize(normalTransform * normalLocal);
+
+    hitPosition = (modelMatrices[objectIndex] * vec4(hitPositionLocal, 1.0)).xyz;
+
+    hitDistance = dot(hitPosition - rayOriginWorld, rayDirectionWorld);
+
+    hitColor = materialData[objectIndex].rgb;
+    hitReflectivity = materialData[objectIndex].a;
+
+    return hitDistance > EPS;
+
+}
+
+RayHit traverseBoundingVolumeHierarchy(vec3 rayOrigin, vec3 rayDirection) {
+
+    RayHit closestHit;
+
+    closestHit.didHit = false;
+
+    closestHit.distance = 1e20;
+
+
+    int nodeStack[32];
+
+    int stackPointer = 0;
+
+    nodeStack[stackPointer++] = 0;
+
+
+    while (stackPointer > 0) {
+
+        int nodeIndex = nodeStack[--stackPointer];
+
+        vec4 boundingBoxMin = bvhNodes[nodeIndex];
+
+        vec4 boundingBoxMax = bvhNodes[nodeIndex + 1];
+
+
+        float timeNear, timeFar;
+
+        bool intersects = intersectAxisAlignedBox(rayOrigin, rayDirection, boundingBoxMin.xyz, boundingBoxMax.xyz, timeNear, timeFar);
+
+       
+
+        if (!intersects || timeNear >= closestHit.distance)
+
+            continue;
+
+
+        int leftChildIndex = int(boundingBoxMin.w);
+
+        int rightChildOrPrimitiveIndex = int(boundingBoxMax.w);
+
+
+        if (rightChildOrPrimitiveIndex >= 0) {
+
+            float hitDist;
+
+            vec3 hitPos;
+
+            vec3 hitNorm;
+
+            float hitRefl;
+
+            vec3 hitColor;
+
+            if (intersectOrientedBox(rightChildOrPrimitiveIndex, rayOrigin, rayDirection,
+
+                                     hitDist, hitPos, hitNorm, hitColor, hitRefl) && hitDist < closestHit.distance) {
+
+                closestHit.didHit = true;
+
+                closestHit.distance = hitDist;
+
+                closestHit.position = hitPos;
+
+                closestHit.normal = hitNorm;
+
+                closestHit.color = hitColor;
+
+                closestHit.reflectivity = hitRefl;
+
+            }
+
+        } else {
+
+            if (leftChildIndex >= 0)
+
+                nodeStack[stackPointer++] = leftChildIndex * 2;
+
+            int rightChildIndex = -rightChildOrPrimitiveIndex - 2;
+
+            if (rightChildIndex >= 0)
+
+                nodeStack[stackPointer++] = rightChildIndex * 2;
+
+        }
+
+    }
+
+    return closestHit;
+
+}
+
+float calculateShadow(vec3 surfacePosition, vec3 surfaceNormal) {
+    vec3 shadowRayOrigin = surfacePosition + surfaceNormal * EPS;
+    return traverseBoundingVolumeHierarchy(shadowRayOrigin, LIGHT_DIRECTION).didHit ? 0.3 : 1.0;
+}
+
+vec3 calculateShading(vec3 surfaceColor, vec3 surfacePosition, vec3 surfaceNormal, vec3 viewDirection) {
+    float diffuseIntensity = max(dot(surfaceNormal, LIGHT_DIRECTION), 0.0);
+    float specularIntensity = pow(max(dot(normalize(LIGHT_DIRECTION + viewDirection), surfaceNormal), 0.0), 64.0);
+    float ambientFactor = 0.08;
+    float shadowFactor = calculateShadow(surfacePosition, surfaceNormal);
+
+    vec3 ambient = ambientFactor * surfaceColor;
+    vec3 diffuse = diffuseIntensity * surfaceColor;
+    vec3 specular = specularIntensity * LIGHT_COLOR;
+    vec3 shadow = shadowFactor * (diffuse + specular);
+
+    vec3 shadedColor = ambient + shadow;
+    return shadedColor;
+}
+
+
+
+void main() {
+
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outputImage);
+
+    if (pixelCoords.x >= imageSize.x || pixelCoords.y >= imageSize.y)
+    return;
+
+    vec4 color = vec4(1.0, 0.0, 0.0, 1.0);
+
+    float fovAdjustment = tan(radians(fieldOfView) * 0.5);
+    float aspectRatio = float(imageSize.x) / float(imageSize.y);
+
+    vec2 uv = (vec2(pixelCoords) + 0.5) / vec2(imageSize);
+    vec2 ndc = (uv * 2.0 - 1.0) * fovAdjustment;
+    ndc.x *= aspectRatio;
+
+    vec3 rayDirCamera = vec3(ndc.x, ndc.y, -1.0);
+    rayDirCamera = normalize(rayDirCamera);
+
+    vec3 rayDirection = (inverseViewMatrix * vec4(rayDirCamera, 0.0)).xyz;
+    vec3 rayOrigin = (inverseViewMatrix * vec4(cameraPosition, 1.0)).xyz;
+
+    float hitDist;
+    vec3 hitPos;
+    vec3 hitNorm;
+    
+    vec3 accumulatedColor = vec3(0.0);
+    vec3 rayThroughput = vec3(1.0);
+
+    for (int bounceIndex = 0; bounceIndex < MAX_RAY_BOUNCES; bounceIndex++) {
+
+        RayHit hit = traverseBoundingVolumeHierarchy(rayOrigin, rayDirection);
+
+        if (hit.didHit) {
+
+            vec3 shadedColor = calculateShading (hit.color, hit.position, hit.normal, -rayDirection);
+            float reflectivity = clamp(hit.reflectivity, 0.0, 1.0);
+
+            accumulatedColor += rayThroughput * (1.0 - reflectivity) * shadedColor;
+            rayThroughput *= reflectivity;
+
+            if (max(max(rayThroughput.x, rayThroughput.y), rayThroughput.z) < 1e-3) break;
+
+            rayOrigin = hit.position + hit.normal * EPS;
+            rayDirection = reflect(rayDirection, hit.normal);
+
+        } else {
+            accumulatedColor += rayThroughput * vec3(0.6, 0.8, 1.0) * (1.0 - rayDirection.y);
+            break;
+        }
+
+    }
+
+    vec3 gammaCorrection = pow(accumulatedColor, vec3(1.0/2.2));
+
+    imageStore(outputImage, pixelCoords, vec4(gammaCorrection,1.0));
+}

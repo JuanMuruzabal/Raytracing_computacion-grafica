@@ -43,3 +43,28 @@ class ShaderProgram:
     
     def __getitem__(self, name):
         return self.program[name]
+
+class ComputeShaderProgram:
+    def __init__(self, ctx, compute_shader_path):
+       with open(compute_shader_path) as file:
+           compute_shader = file.read()
+       self.program = ctx.compute_shader(compute_shader)
+
+       uniforms = []
+       for name in self.program:
+            member = self.program[name]
+            if type(member) is Uniform:
+                uniforms.append(name)
+
+       self.uniforms = uniforms
+
+    def set_uniform(self,name,value):
+        if name in self.uniforms:
+            uniform = self.program[name]
+            if isinstance(value,glm.mat4):
+                uniform.write(value.to_bytes())
+            elif hasattr(uniform, "value"):
+                uniform.value = value
+
+    def run(self, groups_x, groups_y, groups_z =1):
+        self.program.run(groups_x, groups_y, groups_z)
