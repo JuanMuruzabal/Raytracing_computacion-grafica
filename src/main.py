@@ -78,7 +78,7 @@ def main():
     sprite_texture = Texture(width=WIDTH, height=HEIGHT, channels_amount= config["sprite_channels_amount"], color= config["sprite_default_color"])
 
 
-    material_plastic = StandardMaterial(shader, albedo_red, reflectivity=0.0)
+    material_plastic = StandardMaterial(shader, albedo_red, reflectivity=0.1)
 
     material_glass = StandardMaterial(shader, albedo_blue, reflectivity=0.2)
 
@@ -96,7 +96,7 @@ def main():
     sprite = Quad((0, 0, 0), (0, 0, 0), (10, 15, 1), name="Sprite", animated=False, hittable=False)
 
 
-    camera = Camera((0, 0, 15), (0, 0, 0), (0, 1, 0), 45, WIDTH / HEIGHT, 0.01, 100.0)
+    camera = Camera((0, 0, 7), (0, 0, 0), (0, 1, 0), 45, WIDTH / HEIGHT, 0.01, 100.0)
 
     camera.set_sky_colors(top=(16, 150, 222), bottom=(181, 224, 247))
 
