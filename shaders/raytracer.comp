@@ -1,7 +1,7 @@
 #version 430
 
 layout(local_size_x = 16, local_size_y = 16) in;
-layout(rgba32f, binding = 0) uniform image2D outputImage;
+layout(rgba8, binding = 0) uniform image2D u_texture;
 
 layout(std430, binding = 0) buffer Models { mat4 modelMatrices[]; };
 layout(std430, binding = 1) buffer InvModels { mat4 inverseModelMatrices[]; };
@@ -223,7 +223,7 @@ vec3 calculateShading(vec3 surfaceColor, vec3 surfacePosition, vec3 surfaceNorma
 void main() {
 
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 imageSize = imageSize(outputImage);
+    ivec2 imageSize = imageSize(u_texture);
 
     if (pixelCoords.x >= imageSize.x || pixelCoords.y >= imageSize.y)
     return;
@@ -276,5 +276,6 @@ void main() {
 
     vec3 gammaCorrection = pow(accumulatedColor, vec3(1.0/2.2));
 
-    imageStore(outputImage, pixelCoords, vec4(gammaCorrection,1.0));
+    imageStore(u_texture, pixelCoords, vec4(gammaCorrection, 1.0));
+
 }

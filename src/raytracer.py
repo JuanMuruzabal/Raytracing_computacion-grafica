@@ -75,7 +75,7 @@ class RayTracerGPU:
         buffer = self.ctx.buffer(matrix.tobytes())
         buffer.bind_to_storage_buffer(binding=binding)
 
-    def primitives_to_sso(self, primitives, binding = 3):
+    def primitives_to_ssbo(self, primitives, binding = 3):
         self.bvh_nodes = BVH(primitives)
         self.bvh_ssbo = self.bvh_nodes.pack_to_bytes()
         buf_bvh = self.ctx.buffer(self.bvh_ssbo)
@@ -86,5 +86,6 @@ class RayTracerGPU:
         groups_y = (self.height + 15) // 16
 
         self.compute_shader.run(groups_x, groups_y, groups_z=1)
+       
         self.ctx.clear(0.0,0.0,0.0,1.0)
         self.output_graphics.render({"u_texture": self.texture_unit})
