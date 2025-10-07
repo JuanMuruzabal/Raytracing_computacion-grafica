@@ -56,13 +56,32 @@ class HitBoxOBB(Hit):
         t_far = min(t2.x, t2.y, t2.z)
 
         if t_near <= t_far and t_far >= 0:
-            
+
             local_hit_point = local_origin + t_near * local_dir
             world_hit_point = self.model_matrix * glm.vec4(local_hit_point, 1.0)
-            
-            return True, t_near, glm.vec3(world_hit_point)
 
-        return False, None, None
+            # Compute surface normal
+            epsilon = 1e-6
+            local_normal = glm.vec3(0)
+            if abs(local_hit_point.x - 1.0) < epsilon:
+                local_normal = glm.vec3(1, 0, 0)
+            elif abs(local_hit_point.x + 1.0) < epsilon:
+                local_normal = glm.vec3(-1, 0, 0)
+            elif abs(local_hit_point.y - 1.0) < epsilon:
+                local_normal = glm.vec3(0, 1, 0)
+            elif abs(local_hit_point.y + 1.0) < epsilon:
+                local_normal = glm.vec3(0, -1, 0)
+            elif abs(local_hit_point.z - 1.0) < epsilon:
+                local_normal = glm.vec3(0, 0, 1)
+            else:
+                local_normal = glm.vec3(0, 0, -1)
+
+            world_normal = self.model_matrix * glm.vec4(local_normal, 0.0)
+            world_normal = glm.normalize(glm.vec3(world_normal.x, world_normal.y, world_normal.z))
+
+            return True, t_near, glm.vec3(world_hit_point), world_normal
+
+        return False, None, None, None
 
 class Hitbox(Hit):
     def __init__(self, position=(0,0,0), scale=(1,1,1), hittable=True):

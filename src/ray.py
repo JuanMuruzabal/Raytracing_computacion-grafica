@@ -12,3 +12,10 @@ class Ray:
     @property 
     def direction(self) -> glm.vec3:
         return self.__direction
+
+    def at(self, t):
+        return self.__origin + t * self.__direction
+
+    def reflect(self, normal):
+        normal = glm.normalize(normal)
+        return self.direction - 2 * glm.dot(self.direction, normal) * normal

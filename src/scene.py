@@ -1,5 +1,6 @@
 import glm
 import math
+from .ray import Ray
 from .graphics import Graphics, ComputeGraphics
 from .raytracer import RayTracer, RayTracerGPU
 import numpy as np
@@ -12,7 +13,7 @@ class Scene:
         self.time = 0.0
         self.graphics = {}
         self.projection = self.camera.get_perspective_matrix()
-        self.view = self.camera.get_view_matrix()
+        self.view = self.camera.get_view_matrix_rotated()
 
 
     def add_object(self, obj, material=None):
@@ -20,30 +21,94 @@ class Scene:
         # Create graphics for this object
         self.graphics[obj.name] = Graphics(self.ctx, obj, material)
 
+    def remove_object(self, obj):
+        if obj in self.objects:
+            self.objects.remove(obj)
+            if obj.name in self.graphics:
+                del self.graphics[obj.name]
+
+    def add_object_at_position(self, obj_class, position, material=None, hittable=True, **kwargs):
+        """Create and add a new object at the given position"""
+        # Ensure hittable is passed to the object constructor
+        if 'hittable' not in kwargs:
+            kwargs['hittable'] = hittable
+
+        obj = obj_class(position=position, **kwargs)
+        self.add_object(obj, material)
+        return obj
+
+    def get_selected_object(self):
+        return getattr(self, 'selected_object', None)
+
+    def set_selected_object(self, obj):
+        self.selected_object = obj
+
         
     def start(self):
         print("Start!")
 
     def render(self):
+        # Update projection and view matrices each frame to reflect camera changes
+        self.projection = self.camera.get_perspective_matrix()
+        self.view = self.camera.get_view_matrix_rotated()
+
         self.time += 0.01
         for obj in self.objects:
             if (obj.animated):
-                obj.rotation += glm.vec3(0.8, 0.6, 0.4) 
+                obj.rotation += glm.vec3(0.8, 0.6, 0.4)
                 obj.position.x += math.sin(self.time) * 0.01
-                
+
             model = obj.get_model_matrix()
             mvp = self.projection * self.view * model
             self.graphics[obj.name].render({"Mvp": mvp})
         
                 
     def on_mouse_click(self, u, v):
-        ray = self.camera.raycast(u, v)
-        for obj in self.objects:
-            hit, dist, point = obj.check_hit(ray.origin, ray.direction)
-            if hit:
-                print(f"Impacto en {obj.name}")
-                print(f" → Distancia: {dist:.2f}")
-                print(f" → Punto: ({point.x:.2f}, {point.y:.2f}, {point.z:.2f})")
+        current_ray = self.camera.raycast(u, v)
+        max_bounces = 5
+        bounce_count = 0
+
+        while bounce_count < max_bounces:
+            closest_hit = None
+            closest_dist = float('inf')
+            closest_normal = None
+
+            for obj in self.objects:
+                if hasattr(obj, 'hittable') and not obj.hittable:
+                    continue  # Skip non-hittable objects like floor
+
+                result = obj.check_hit(current_ray.origin, current_ray.direction)
+                if isinstance(result, tuple) and len(result) >= 4:
+                    hit, dist, point, normal = result
+                else:
+                    hit, dist, point = result
+                    normal = None
+
+                if hit and dist > 1e-6 and dist < closest_dist:  # Avoid self-intersection with small offset
+                    closest_hit = (obj, dist, point)
+                    closest_dist = dist
+                    closest_normal = normal
+
+            if closest_hit:
+                obj, dist, point = closest_hit
+                if closest_normal is not None:
+                    print(f"Bounce {bounce_count}: Hit {obj.name} (dist: {dist:.2f}), normal: {closest_normal}")
+
+                    # Compute reflected ray
+                    reflected_direction = current_ray.reflect(closest_normal)
+                    # Offset origin slightly to avoid immediate self-intersection
+                    reflected_origin = point + glm.normalize(reflected_direction) * 1e-6
+                    current_ray = Ray(reflected_origin, reflected_direction)
+                    bounce_count += 1
+                else:
+                    print(f"Hit {obj.name} (dist: {dist:.2f}) but no normal available")
+                    break
+            else:
+                if bounce_count > 0:
+                    print(f"No more hits after {bounce_count} bounces")
+                else:
+                    print(f"No hit at ({u:.3f}, {v:.3f})")
+                break
 
     def on_resize(self, width, height):
         if self.camera:
@@ -104,6 +169,16 @@ class RaySceneGPU(Scene):
     def start(self):
         print("Start!")
         self.primitives = []
+        n = len(self.objects)
+        self.models_f = np.zeros((n, 16), dtype='f4')
+        self.inv_f = np.zeros((n, 16), dtype='f4')
+        self.mats_f = np.zeros((n, 4), dtype='f4')
+
+        self._update_matrix()
+        self._matrix_to_ssbo()
+
+    def update_gpu_buffers(self):
+        """Update GPU buffers when objects list changes"""
         n = len(self.objects)
         self.models_f = np.zeros((n, 16), dtype='f4')
         self.inv_f = np.zeros((n, 16), dtype='f4')

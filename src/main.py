@@ -14,8 +14,11 @@ from .cube import Cube
 
 from .quad import Quad
 
+from .sphere_model import Sphere
+
 def main():
 
+    # Las instrucciones están en el menú de la ventana, no necesitamos console output
 
     WIDTH, HEIGHT = 800, 600
 
@@ -61,7 +64,7 @@ def main():
     config = scene_configs[SCENE_TYPE]
 
 
-    window = Window(width=WIDTH, height=HEIGHT, caption=f"Basic Graphic Engine - {SCENE_TYPE.upper()}")
+    window = Window(width=WIDTH, height=HEIGHT, caption=f"3D Editor - Scene | Controls - {SCENE_TYPE.upper()}")
 
 
     shader = ShaderProgram(window.ctx, 'shaders/basic.vert', 'shaders/basic.frag')
@@ -91,7 +94,7 @@ def main():
 
     cube2 = Cube((-2, 0, 5), (0, 0, 0), (1, 1, 1), name="Cube2")
 
-    quad = Quad((0, -3, 0), (-90, 0, 0), (10, 15, 1), name="Floor", animated=False)
+    quad = Quad((0, -3, 0), (-90, 0, 0), (10, 15, 1), name="Floor", animated=False, hittable=False)
 
     sprite = Quad((0, 0, 0), (0, 0, 0), (10, 15, 1), name="Sprite", animated=False, hittable=False)
 
@@ -127,11 +130,11 @@ def main():
 
         scene = RaySceneGPU(window.ctx, camera, WIDTH, HEIGHT, sprite, material_sprite)
 
-        scene.add_object(cube1, material_plastic)
+        scene.add_object_at_position(type(cube1), cube1.position, material_plastic, name=cube1.name, scale=cube1.scale, hittable=True)
 
-        scene.add_object(cube2, material_glass)
+        scene.add_object_at_position(type(cube2), cube2.position, material_glass, name=cube2.name, scale=cube2.scale, hittable=True)
 
-        scene.add_object(quad, material_ceramic)
+        scene.add_object_at_position(type(quad), quad.position, material_ceramic, name=quad.name, scale=quad.scale, animated=False, hittable=False)
 
 
     window.set_scene(scene)

@@ -82,10 +82,14 @@ class RayTracerGPU:
         buf_bvh.bind_to_storage_buffer(binding=binding)
 
     def run(self):
+        # Update camera uniforms with current camera state
+        self.compute_shader.set_uniform('cameraPosition', self.camera.position)
+        self.compute_shader.set_uniform('inverseViewMatrix', self.camera.get_inverse_view_matrix())
+
         groups_x = (self.width + 15) // 16
         groups_y = (self.height + 15) // 16
 
         self.compute_shader.run(groups_x, groups_y, groups_z=1)
-       
+
         self.ctx.clear(0.0,0.0,0.0,1.0)
         self.output_graphics.render({"u_texture": self.texture_unit})
