@@ -7,6 +7,8 @@ layout(std430, binding = 0) buffer Models { mat4 modelMatrices[]; };
 layout(std430, binding = 1) buffer InvModels { mat4 inverseModelMatrices[]; };
 layout(std430, binding = 2) buffer Materials { vec4 materialData[]; };
 layout(std430, binding = 3) buffer BVH { vec4 bvhNodes[]; };
+uniform sampler2D u_selectedTexture; // Textura actualmente seleccionada
+uniform int u_hasTexture; // Flag: 1 si hay textura, 0 si no
 
 uniform vec3 cameraPosition;
 uniform mat4 inverseViewMatrix;
@@ -38,6 +40,35 @@ bool intersectAxisAlignedBox(vec3 rayOrigin, vec3 rayDirection,
     return timeFar >= max(timeNear, 0.0);
 }
 
+vec2 calculateCubeUV(vec3 position, vec3 normal) {
+    // Calcula UV coordinates para un cubo basado en la posición y normal en espacio local [-0.5, 0.5]
+    vec3 absNormal = abs(normal);
+
+    // Determinar cara según la normal dominante
+    if (absNormal.x > absNormal.y && absNormal.x > absNormal.z) {
+        // Cara X (±0.5)
+        return vec2(position.y + 0.5, position.z + 0.5);
+    } else if (absNormal.y > absNormal.x && absNormal.y > absNormal.z) {
+        // Cara Y (±0.5)
+        return vec2(position.x + 0.5, position.z + 0.5);
+    } else {
+        // Cara Z (±0.5)
+        return vec2(position.x + 0.5, position.y + 0.5);
+    }
+}
+
+vec3 sampleTexture(vec2 uv, int objectIndex) {
+    // Samplea la textura solo si este objeto específico tiene textura habilitada
+    float reflectivity = materialData[objectIndex].a;
+    // Usar reflectividad negativa como flag para indicar texture use
+    if (u_hasTexture == 1 && reflectivity < 0.0) {
+        vec4 texColor = texture(u_selectedTexture, uv);
+        return texColor.rgb;
+    } else {
+        return materialData[objectIndex].rgb;
+    }
+}
+
 bool intersectOrientedBox(int objectIndex, vec3 rayOriginWorld, vec3 rayDirectionWorld,
 
                           out float hitDistance, out vec3 hitPosition, out vec3 hitNormal, out vec3 hitColor, out float hitReflectivity) {
@@ -57,7 +88,7 @@ bool intersectOrientedBox(int objectIndex, vec3 rayOriginWorld, vec3 rayDirectio
 
     bool intersects = intersectAxisAlignedBox(rayOriginLocal, rayDirectionLocal, boxMinLocal, boxMaxLocal, timeNear, timeFar);
 
-   
+
 
     if (!intersects) return false;
 
@@ -75,7 +106,7 @@ bool intersectOrientedBox(int objectIndex, vec3 rayOriginWorld, vec3 rayDirectio
 
     float closestFaceDistance = min(min(minDistance.x, minDistance.y), minDistance.z);
 
-   
+
 
     vec3 normalLocal = vec3(0.0);
 
@@ -100,7 +131,9 @@ bool intersectOrientedBox(int objectIndex, vec3 rayOriginWorld, vec3 rayDirectio
 
     hitDistance = dot(hitPosition - rayOriginWorld, rayDirectionWorld);
 
-    hitColor = materialData[objectIndex].rgb;
+    // Calcular UV y samplear textura en lugar de usar solo color de material
+    vec2 uv = calculateCubeUV(hitPositionLocal, normalLocal);
+    hitColor = sampleTexture(uv, objectIndex);
     hitReflectivity = materialData[objectIndex].a;
 
     return hitDistance > EPS;

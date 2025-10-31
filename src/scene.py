@@ -34,8 +34,8 @@ class Scene:
             kwargs['hittable'] = hittable
 
         obj = obj_class(position=position, **kwargs)
-        self.add_object(obj, material)
-        return obj
+        success = self.add_object(obj, material)
+        return obj if success else False
 
     def get_selected_object(self):
         return getattr(self, 'selected_object', None)
@@ -134,21 +134,40 @@ class RayScene(Scene):
     # Este método fue cambiado: recrea el raytracer y la textura al redimensionar la ventana.
 
 class RaySceneGPU(Scene):
-    def __init__(self, ctx, camera, width, height, output_model, output_material):
+    def __init__(self, ctx, camera, width, height, output_model, output_material, max_objects=100):
        self.ctx = ctx
        self.camera = camera
        self.width = width
        self.height = height
+       self.max_objects = max_objects  # Nuevo: límite máximo de objetos (default 100)
        self.raytracer = None
 
        self.output_graphics = Graphics(ctx, output_model, output_material)
        self.raytracer = RayTracerGPU(ctx, camera, width, height, self.output_graphics)
 
+       self._needs_buffer_update = False  # Flag para optimización: actualizar buffers solo cuando cambian objetos
+       self._cached_primitives = None  # Cache para evitar reconstruir BVH innecesariamente
+
        super().__init__(self.ctx, self.camera)
 
     def add_object(self, model, material):
+        if len(self.objects) >= self.max_objects:  # Validación: límite de objetos alcanzado
+            return False
+
         self.objects.append(model)
         self.graphics[model.name] = ComputeGraphics(self.ctx, model, material)
+        self._needs_buffer_update = True  # Marcar para actualizar GPU buffers
+        return True
+
+    def remove_object(self, model):
+        if model in self.objects:
+            self.objects.remove(model)
+            if model.name in self.graphics:
+                del self.graphics[model.name]
+            # Forzar actualización de buffers cuando se elimina objeto
+            self._needs_buffer_update = True
+            return True
+        return False
 
     def _update_matrix(self):
         self.primitives = []
@@ -191,10 +210,17 @@ class RaySceneGPU(Scene):
         self.time += 0.01
         for obj in self.objects:
             if (obj.animated):
-                obj.rotation += glm.vec3(0.8, 0.6, 0.4) 
+                obj.rotation += glm.vec3(0.8, 0.6, 0.4)
                 obj.position.x += math.sin(self.time) * 0.01
 
         if (self.raytracer is not None):
+            # Actualizar buffers solo si cambiaron los objetos
+            if self._needs_buffer_update:
+                self.update_gpu_buffers()
+                self._needs_buffer_update = False
+                # Reset primitive cache
+                self._cached_primitives = None
+
             self._update_matrix()
             self._matrix_to_ssbo()
             self.raytracer.run()

@@ -21,7 +21,7 @@ class Window(pyglet.window.Window):
         self.current_tool = "camera"  # tool del panel: "camera", "select", "add_cube", "delete"
         self.current_cube_index = -1  # índice del cubo seleccionado (-1 = ninguno seleccionado)
         self.showing_menu = False
-        self.gui = SimpleGUI(self.ctx, kwargs.get('width', 800), kwargs.get('height', 600))
+        self.gui = SimpleGUI(self.ctx, kwargs.get('width', 800), kwargs.get('height', 600), self)
         pyglet.clock.schedule_interval(self.update, 1/60.0)
 
         # No sphere materials needed - using direct OBB
@@ -38,6 +38,13 @@ class Window(pyglet.window.Window):
 
         # Enable depth test for 3D scene
         self.ctx.enable(moderngl.DEPTH_TEST)
+
+        # Verificar si hay cambios en la textura para actualizar raytracer
+        if hasattr(self.gui, 'side_panel') and self.gui.side_panel._gpu_texture_ready == False:
+            if self.scene and hasattr(self.scene, 'raytracer'):
+                current_texture = self.gui.side_panel.get_current_texture()
+                self.scene.raytracer.set_texture(current_texture)
+                self.gui.side_panel._gpu_texture_ready = True
 
         # Render 3D scene
         if self.scene:
@@ -99,9 +106,18 @@ class Window(pyglet.window.Window):
                 # Select mode: activado, usar tecla C para cyclear objetos
                 print("Select mode activated - use C key to cycle through objects")
             elif tool == "add_cube":
-                # Add cube en el centro de la pantalla
-                self._add_cube_at_screen_center()
-                print("Cube added at screen center")
+                if self.scene and hasattr(self.scene, 'add_object_at_position'):
+                    success = self._add_cube_at_screen_center()
+                    if success:
+                        # Calcular y mostrar objetos restantes después de agregar
+                        remaining = self.scene.max_objects - len(self.scene.objects) if hasattr(self.scene, 'max_objects') else "unlimited"
+                        print(f"Cube added at screen center ({remaining} objects remaining)")
+                    else:
+                        # Mensaje cuando se alcanzó el límite máximo
+                        print("Maximum objects limit reached, cannot add more cubes (0 remaining)")
+                else:
+                    self._add_cube_at_screen_center()
+                    print("Cube added at screen center")
             elif tool == "delete":
                 # Delete mode: esperar por ENTER con objeto seleccionado
                 print("Delete mode activated - select object and press ENTER to delete")
@@ -149,11 +165,11 @@ class Window(pyglet.window.Window):
             scale=(1, 1, 1)
         )
 
-        # Update GPU buffers if needed
+        # Update GPU buffers if needed (though now handled by flag)
         if hasattr(self.scene, 'update_gpu_buffers'):
             self.scene.update_gpu_buffers()
 
-        print(f"Cube added at position: {intersection_point}")
+        return cube
 
     def on_key_release(self, symbol, modifiers):
         if symbol in self.keys:
@@ -173,25 +189,6 @@ class Window(pyglet.window.Window):
                 panel_x_ndc = ((x - scene_width_pixels) / panel_width_pixels) * 2 - 1
                 panel_y_ndc = (y / self.height) * 2 - 1
                 self._handle_panel_click(panel_x_ndc, panel_y_ndc)
-            else:
-                # Handle scene interactions based on current tool
-                if self.current_tool == "select":
-                    # Use raycasting to select objects
-                    selected = self.pick_object(x, y)
-                    if selected:
-                        self.selected_object = selected
-                        self.current_cube_index = -1  # Deselect if was cycling
-                        print(f"Object selected by click: {selected.name if hasattr(selected, 'name') else 'unnamed'}")
-                    else:
-                        self.selected_object = None
-                        print("No object selected")
-                else:
-                    # Default: trigger scene.on_mouse_click for debug/hit info
-                    scene_viewport = self.gui.get_scene_viewport()
-                    scene_x, scene_y, scene_width, scene_height = scene_viewport
-                    u = (x - scene_x) / scene_width if scene_width > 0 else 0
-                    v = (y - scene_y) / scene_height if scene_height > 0 else 0
-                    self.scene.on_mouse_click(u, v)
 
         elif button == pyglet.window.mouse.RIGHT:
             self.is_moving_camera = True
@@ -263,94 +260,6 @@ class Window(pyglet.window.Window):
 
 
 
-    def pick_object(self, x, y):
-        import time
-        timestamp = time.time()
-
-        print(f"\n{'='*60} PICK DEBUG [{timestamp:.3f}] {'='*60}")
-        print(f"Mouse click at screen coords: ({x}, {y})")
-
-        # Proper OBB-based raycasting for accurate object selection
-        if not self.scene or not self.scene.objects or not self.gui:
-            print("ERROR: No scene, objects, or GUI available!")
-            return None
-
-        # Get scene viewport bounds
-        scene_viewport = self.gui.get_scene_viewport()
-        scene_x, scene_y, scene_width, scene_height = scene_viewport
-        print(f"Scene viewport: ({scene_x}, {scene_y}, {scene_width}, {scene_height})")
-
-        # Check if click is within scene viewport
-        if not (scene_x <= x <= scene_x + scene_width and scene_y <= y <= scene_y + scene_height):
-            print(f"ERROR: Click is outside scene area! Click=({x},{y}), Scene bounds=({scene_x},{scene_y},{scene_x+scene_width},{scene_y+scene_height})")
-            return None
-
-        # Use direct OBB raycasting for all selection
-
-        # Convert screen coordinates to normalized coordinates relative to scene viewport
-        u = (x - scene_x) / scene_width if scene_width > 0 else 0
-        v = (y - scene_y) / scene_height if scene_height > 0 else 0
-
-        # Cast ray from camera through screen point
-        ray = self.scene.camera.raycast(u, v)
-
-        # Sort objects by priority: Sprites first, then Floor, then Cubes (back to front)
-        def get_object_priority(obj):
-            name = getattr(obj, 'name', '').lower()
-            if 'sprite' in name:
-                return 0  # Highest priority (never selected)
-            elif 'floor' in name:
-                return 1  # Medium priority
-            elif name.startswith('cube'):
-                return 2  # Lower priority (prefer cubes over floor)
-            else:
-                return 3  # Default
-
-        sorted_objects = sorted(self.scene.objects, key=get_object_priority)
-
-        # Find closest intersection with any hittable object
-        min_dist = float('inf')
-        closest_obj = None
-
-        for obj in sorted_objects:
-            # Skip sprites and non-hittable objects
-            obj_name = getattr(obj, 'name', '').lower()
-            if obj_name.startswith('sprite') or (hasattr(obj, 'hittable') and not obj.hittable):
-                continue
-
-            if hasattr(obj, 'check_hit') and obj.check_hit is not None:
-                hit_result = obj.check_hit(ray.origin, ray.direction)
-
-                if isinstance(hit_result, tuple) and len(hit_result) >= 1:
-                    hit = hit_result[0]
-                    name = getattr(obj, 'name', 'unnamed')
-                    print(f"Check {name}: hit={hit}")
-                    if hit and len(hit_result) >= 2:
-                        dist = hit_result[1]
-                        print(f"  Distance: {dist}")
-
-                if len(hit_result) >= 3:
-                    hit, dist, point = hit_result[:3]
-
-                    if hit and dist > 0 and dist < min_dist:
-                        min_dist = dist
-                        closest_obj = obj
-
-        # Final result
-        print(f"\nFINAL RESULT:")
-        if closest_obj and hasattr(closest_obj, 'name'):
-            print(f"✅ SELECTED: {closest_obj.name} at distance {min_dist:.4f}")
-            print(f"{'='*60} END PICK [{'='*60}")
-            return closest_obj
-        elif closest_obj:
-            print(f"✅ SELECTED: Unnamed object at distance {min_dist:.4f}")
-            print(f"{'='*60} END PICK [{'='*60}")
-            return closest_obj
-        else:
-            print("❌ NO HITTABLE OBJECTS FOUND IN RAY")
-            print(f"{'='*60} END PICK [{'='*60}")
-            return None
-
     def _add_cube_at_camera(self):
         if not self.scene or not self.scene.camera:
             return
@@ -419,37 +328,52 @@ class Window(pyglet.window.Window):
         return obj.name.startswith("Cube")
 
     def _get_default_material(self):
-        # Return a default material
-        if hasattr(self, '_default_material'):
-            return self._default_material
-
-        # Try to get a shader from existing materials in the scene
-        shader = None
-        if self.scene and len(self.scene.objects) > 0:
-            # Try to get shader from an existing object
-            for obj_name, graphics in self.scene.graphics.items():
-                if hasattr(graphics, 'material') and graphics.material and hasattr(graphics.material, 'shader_program'):
-                    shader = graphics.material.shader_program
-                    break
-
-        if shader is None:
-            # Fallback: try to create a basic shader
+        """Crear material por defecto o marcar para usar textura"""
+        # Verificar si hay textura seleccionada en el panel
+        if hasattr(self.gui, 'side_panel') and self.gui.side_panel.get_current_texture():
+            # Crear material especial que indica uso de textura
+            # Usar reflectividad negativa como flag para textura
             try:
+                from .material import StandardMaterial
                 shader = self._create_basic_shader()
+                if shader:
+                    material = StandardMaterial(shader, None, reflectivity=-0.5)  # Flag negativo para textura
+                    return material
             except:
-                # If all else fails, return None and let the system handle it
-                return None
-
-        # Create a simple white material
-        try:
-            from .material import StandardMaterial
-            from .texture import Texture
-
-            albedo = Texture("u_texture", 1, 1, 3, None, (255, 255, 255))
-            self._default_material = StandardMaterial(shader, albedo, reflectivity=0.1)
-            return self._default_material
-        except:
+                pass
             return None
+        else:
+            # Usar material por defecto sin textura
+            if hasattr(self, '_default_material'):
+                return self._default_material
+
+            # Try to get a shader from existing materials in the scene
+            shader = None
+            if self.scene and len(self.scene.objects) > 0:
+                # Try to get shader from an existing object
+                for obj_name, graphics in self.scene.graphics.items():
+                    if hasattr(graphics, 'material') and graphics.material and hasattr(graphics.material, 'shader_program'):
+                        shader = graphics.material.shader_program
+                        break
+
+            if shader is None:
+                # Fallback: try to create a basic shader
+                try:
+                    shader = self._create_basic_shader()
+                except:
+                    # If all else fails, return None and let the system handle it
+                    return None
+
+            # Create a simple white material
+            try:
+                from .material import StandardMaterial
+                from .texture import Texture
+
+                albedo = Texture("u_texture", 1, 1, 3, None, (255, 255, 255))
+                self._default_material = StandardMaterial(shader, albedo, reflectivity=0.1)
+                return self._default_material
+            except:
+                return None
 
     def _add_cube_at_screen_center(self):
         """Add a cube at the center of the screen view"""
@@ -462,10 +386,10 @@ class Window(pyglet.window.Window):
         center_y = scene_viewport[1] + scene_viewport[3] / 2
 
         # Use the existing method with center coordinates
-        self._add_cube_at_click(center_x, center_y)
+        return self._add_cube_at_click(center_x, center_y)
 
-    def _cycle_cube_selection(self):
-        """Cycle through available cubes with C key"""
+    def _cycle_cube_selection(self, direction=1):
+        """Cycle through available cubes"""
         if not self.scene or not self.scene.objects:
             return
 
@@ -478,8 +402,15 @@ class Window(pyglet.window.Window):
             self.current_cube_index = -1
             return
 
-        # Cycle to next cube
-        self.current_cube_index = (self.current_cube_index + 1) % len(cubes)
+        # Handle -1 index (no selection)
+        if self.current_cube_index == -1 and direction == -1:
+            self.current_cube_index = len(cubes) - 1  # Wrap to last
+        elif self.current_cube_index == -1 and direction == 1:
+            self.current_cube_index = 0
+        else:
+            # Cycle
+            self.current_cube_index = (self.current_cube_index + direction) % len(cubes)
+
         self.selected_object = cubes[self.current_cube_index]
 
         print(f"Cube selected: {self.selected_object.name if hasattr(self.selected_object, 'name') else 'unnamed'} ({self.current_cube_index + 1}/{len(cubes)})")
@@ -493,6 +424,12 @@ class Window(pyglet.window.Window):
         self.scene = scene
         scene.start()
 
+
+    def _update_raytracer_texture(self):
+        """Actualiza la textura del raytracer cuando cambia la selección en la UI"""
+        if hasattr(self, 'gui') and self.gui and hasattr(self.gui, 'side_panel') and hasattr(self.scene, 'raytracer'):
+            current_texture = self.gui.side_panel.get_current_texture()
+            self.scene.raytracer.set_texture(current_texture)
 
     def run(self):
         pyglet.app.run()

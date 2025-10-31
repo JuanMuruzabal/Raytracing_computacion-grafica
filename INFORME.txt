@@ -1,0 +1,329 @@
+INFORME PROYECTO FINAL
+
+Descripción de Cambios Implementados
+Se han realizado mejoras significativas en la interfaz de usuario y la funcionalidad del proyecto de raytracing, incluyendo la adición de nuevos controles para interactuar con la escena y los objetos.
+
+1. Implementación de Interfaz de Usuario (UI) y Panel Lateral
+- **UI Principal**: Se agregó una interfaz gráfica de usuario completa utilizando Dear ImGui para proporcionar controles intuitivos.
+- **Panel Lateral**: Implementación de un panel lateral que contiene opciones de configuración y herramientas de edición.
+- **Arquitectura**: La UI se integra con el sistema de renderizado existente, permitiendo configuraciones en tiempo real sin afectar el rendimiento del raytracing GPU.
+
+2. Selección y Movimiento de Objetos
+- **Selección de Objetos**: Nueva funcionalidad para seleccionar objetos en la escena mediante interacción con la UI.
+- **Movimiento de Objetos**: Implementación de controles para trasladar objetos seleccionados en el espacio 3D.
+- **Transformaciones**: Soporte para movimientos precisos con gizmos visuales que indican direcciones de transformación.
+
+3. Control de Cámara
+- **Movimiento de Cámara**: Funcionalidad para desplazar la posición de la cámara en la escena.
+- **Rotación de Cámara**: Controles para rotar la vista de la cámara alrededor de los ejes X, Y y Z.
+- **Interacción Fluida**: Implementación de controles intuitivos que permiten navegación suave por la escena.
+
+4. Gestión de Objetos
+- **Agregar Objetos**: Capacidad de instanciar nuevos objetos geométricos (cubos, esferas) en la escena.
+- **Eliminar Objetos**: Funcionalidad para remover objetos de la escena de manera dinámica.
+- **Gestión Dinámica**: Actualización automática de estructuras de datos (BVH, matrices de transformación) al agregar/eliminar objetos.
+
+5. Eliminación de Selección por Clicks
+- **Problema Identificado**: La selección de objetos mediante clicks del mouse presentaba problemas de precisión y usabilidad.
+- **Solución Implementada**: Se removió esta funcionalidad debido a su funcionamiento inadecuado.
+- **Alternativa**: Implementación de selección basada en UI/panel lateral para mayor confiabilidad y control.
+
+## Impacto en el Código - Análisis Detallado por Archivo
+
+Las modificaciones principales afectan los siguientes archivos, con explicaciones detalladas de qué hace cada archivo y cómo contribuye al proyecto:
+
+### `src/ui_overlay.py` - Interfaz Gráfica Principal
+**¿Qué hace?** Contiene todas las clases para renderizar la interfaz de usuario (UI), incluyendo paneles, botones y textos.
+**Cambios principales:**
+- Implementación completa de `SidePanel` con botones interactivos para herramientas de edición
+- Clase `TextRenderer` para dibujar textos usando PIL + OpenGL
+- Gestión de coordenadas NDC (Normalized Device Coordinates) para renderizado 2D
+- Sistema de callbacks para conectar la UI con la lógica de gestión de escena
+
+### `src/window.py` - Manejo de Ventana y Entradas
+**¿Qué hace?** Maneja la ventana principal de la aplicación, eventos de entrada (teclado/ratón) y coordina entre UI, escena y controles.
+**Cambios principales:**
+```python
+def _handle_panel_click(self, panel_x_ndc, panel_y_ndc):
+    # Convertir coordenadas de panel a herramientas específicas
+    if tool == "add_cube":
+        # Agregar cubo y mostrar contador de objetos restantes
+        success = self._add_cube_at_screen_center()
+        if success:
+            remaining = self.scene.max_objects - len(self.scene.objects)
+            print(f"Cube added at screen center ({remaining} objects remaining)")
+```
+- Integración de eventos de mouse para clicks en panel lateral
+- Funciones de agregación de objetos con validaciones de límite
+- Sistema de selección de objetos con ciclo entre cubos disponibles
+
+### `src/scene.py` - Gestión de Escena y Objetos
+**¿Qué hace?** Controla la escena 3D, almacena objetos, maneja matrices de transformación y coordina rendering.
+**Cambios principales:**
+```python
+class RaySceneGPU(Scene):
+    def add_object(self, model, material):
+        if len(self.objects) >= self.max_objects:  # Validación de límite
+            return False
+        self.objects.append(model)
+        self._needs_buffer_update = True  # Flag para actualizar GPU
+        return True
+```
+- Límite máximo de objetos (100 por defecto) para evitar overflow
+- Flags de actualización condicional para reconstruir solo cuando cambian objetos
+- Gestión dinámica de arrays de matrices de transformación
+
+### `src/camera.py` - Sistema de Cámara 3D
+**¿Qué hace?** Implementa toda la lógica de la cámara, incluyendo movimientos, rotaciones y cálculo de matrices de vista/proyección.
+**Cambios principales:**
+- Mejoras en controles de movimiento suave con teclado
+- Optimizaciones en cálculo de direcciones (forward, right, up vectors)
+- Integración con controles de UI para modos de herramienta (camera vs object mode)
+
+Estas mejoras transforman el proyecto de una aplicación de visualización estática a una herramienta de modelado y edición interactiva, manteniendo el rendimiento del raytracing en tiempo real
+
+
+
+
+
+
+
+
+
+
+
+
+## Optimizaciones de Memoria y Rendimiento
+
+Para resolver los problemas de overflow de memoria que ocurrían principalmente cuando el programa corría por mucho tiempo o se agregaban objetos dinámicamente, se implementaron mejoras críticas de rendimiento:
+
+### Gestión Dinámica de Buffers SSBO
+**Problema**: En cada frame del raytracing se creaban nuevos buffers Shader Storage Buffer Objects (SSBO) para matrices de transformación, material y primitivos, pero nunca se liberaba la memoria de los anteriores. Esto causaba crecimiento continuo de VRAM y RAM hasta causar crash.
+
+```python
+# Antes: Nueva creación cada frame (causiando leaks)
+buffer = self.ctx.buffer(matrix.tobytes())
+
+# Después: Reutilización de buffers existentes
+if not hasattr(self, f'_buffer_{binding}') or getattr(self, f'_buffer_{binding}') is None:
+    # Crear buffer por primera vez
+    setattr(self, f'_buffer_{binding}', self.ctx.buffer(matrix.tobytes()))
+else:
+    # Reutilizar buffer existente, solo actualizar contenido
+    existing_buffer = getattr(self, f'_buffer_{binding}')
+    matrix_bytes = matrix.tobytes()
+    if len(matrix_bytes) <= existing_buffer.size:
+        # Suficiente espacio: copiar datos sin nuevo buffer
+        existing_buffer.write(matrix_bytes)
+    else:
+        # Buffer pequeño: crear uno más grande
+        setattr(self, f'_buffer_{binding}', self.ctx.buffer(matrix_bytes))
+
+# Vincular el buffer (reutilizado o nuevo) al binding point de SSBO
+getattr(self, f'_buffer_{binding}').bind_to_storage_buffer(binding=binding)
+```
+
+**Cómo se solucionó**: Se cambió la estrategia de crear buffers descartables cada frame por mantener referencias persistentes a los buffers SSBO, actualizando solo su contenido cuando cambian los datos. Esto evita la acumulación de buffers no liberados en memoria GPU.
+
+### Límites Máximos de Objetos
+**Problema**: No había restricción en la cantidad de objetos que se podían agregar, permitiendo crecimiento infinito de memoria.
+
+**Cómo se solucionó**:
+- Se agregó un parámetro `max_objects` (default 100) al constructor de `RaySceneGPU` en `src/scene.py`.
+- Los métodos `add_object` ahora retornan False si se alcanza el límite.
+- Se agregó información visual en la UI cuando no se pueden agregar más objetos.
+
+### Actualización Condicional de Buffers GPU
+**Problema**: Las estructuras de BVH y matrices se reconstruían en cada frame del render, incluso cuando la escena no cambiaba, consumiendo tiempo y memoria innecesariamente.
+
+```python
+# En add_object: cuando se agrega un objeto, marcar que necesita actualizar
+self.objects.append(model)
+self.graphics[model.name] = ComputeGraphics(self.ctx, model, material)
+# Flag que indica que los buffers necesitan refresh
+self._needs_buffer_update = True  # Fuerza reconstrucción de BVH y matrices
+
+# En render(): solo actualizar cuando cambió algo
+if (self.raytracer is not None):
+    if self._needs_buffer_update:  # Verificar flag antes de reconstruir
+        self.update_gpu_buffers()   # Reconstruir matrices y BVH
+        self._needs_buffer_update = False  # Reset flag hasta próximo cambio
+        self._cached_primitives = None     # Limpiar caché de primitivos
+    self._update_matrix()  # Actualizar matrices en CPU
+    self._matrix_to_ssbo() # Transferir a GPU (solo copia, no reconstrucción)
+```
+
+**Cómo se solucionó**: Se agregó un mecanismo de flags para detectar cuando realmente cambian los objetos, evitando reconstruir estructuras costosas del raytracing (BVH, matrices) en cada frame innecesariamente.
+
+### Caché Inteligente para BVH
+**Problema**: La jerarquía de Bounding Volume Hierarchy (BVH) se reconstruía cada frame, siendo una operación costosa para escenas complejas.
+
+```python
+def primitives_to_ssbo(self, primitives, binding = 3):
+    # Verificar si las primitivos cambiaron desde la última reconstrucción
+    if not hasattr(self, '_cached_primitives') or self._cached_primitives != primitives:
+        # Solo reconstruir BVH si cambiaron los objetos (operación costosa)
+        self.bvh_nodes = BVH(primitives)  # Crear nuevas cajas delimitadoras
+        self.bvh_ssbo = self.bvh_nodes.pack_to_bytes()  # Serializar jerarquía
+        # Actualizar caché para próximas comparaciones
+        self._cached_primitives = primitives.copy() if hasattr(primitives, 'copy') else primitives[:]
+    else:
+        # Si no cambió, usar BVH existente (optimización)
+        pass
+
+    # Reutilizar buffer BVH (mismo patrón que matrices)
+    if not hasattr(self, '_bvh_buffer'):
+        self._bvh_buffer = self.ctx.buffer(self.bvh_ssbo)
+    else:
+        if len(self.bvh_ssbo) <= self._bvh_buffer.size:
+            self._bvh_buffer.write(self.bvh_ssbo)  # Solo actualizar contenido
+        else:
+            self._bvh_buffer = self.ctx.buffer(self.bvh_ssbo)  # Nuevo buffer si necesario
+    # Vincular buffer al shader compute
+    self._bvh_buffer.bind_to_storage_buffer(binding=binding)
+```
+
+**Cómo se solucionó**: Se implementó comparación de estado entre frames para reconstruir la estructura BVH únicamente cuando cambian los objetos, con reutilización de buffers GPU para evitar creación repetida.
+
+### Validación en UI para Recurso Límite
+**Problema**: La interfaz gráfica no validaba si se podía agregar objetos después del límite.
+
+**Cómo se solucionó**:
+- En `src/window.py`, función `_handle_panel_click`, se revisa el retorno de las funciones de agregar objetos.
+- Se muestran mensajes explicativos cuando se llega al límite máximo.
+
+### Sistema de Texturas UV para Raytracing GPU
+**Problema original**: Los objetos solo mostraban colores sólidos sin capacidad de texturizar con imágenes reales.
+
+**Solución implementada**: Sistema completo de texturizado UV con integración en GPU raytracing que permite aplicar imágenes a cubos de manera individual y precisa.
+
+```python
+# Ejemplo de uso del sistema de texturas:
+// 1. Usuario selecciona imagen desde panel lateral
+// 2. Se carga y convierte a formato OpenGL
+from PIL import Image
+import numpy as np
+img = Image.open(image_path).convert('RGB')
+img_array = img.tobytes()
+texture_obj = Texture(name, width, height, 3, None, None, img_array)
+
+// 3. Se aplica solo a nuevos objetos creados
+if self.gui.side_panel.get_current_texture():
+    material = StandardMaterial(shader, None, reflectivity=-0.5)  # Flag para texturas
+```
+
+Estas optimizaciones previenen los crashes por overflow manteniendo el rendimiento en tiempo real mientras permiten interacción fluida con la escena y texturizado avanzado.
+
+
+
+
+
+
+
+
+
+
+
+#### Arquitectura del Sistema de Texturas
+
+**1. Interfaz de Usuario para Carga de Texturas**
+```python
+# En ui_overlay.py - Agregado selector de archivos
+def _select_texture_file(self):
+    # Diálogo nativo para selección de imagen
+    file_path = filedialog.askopenfilename(
+        title="Seleccionar imagen para textura",
+        filetypes=[("Archivos de imagen", "*.png *.jpg *.jpeg *.bmp")]
+    )
+```
+
+**2. Material con Flag de Textura por Objeto**
+- Usamos `reflectivity = -0.5` como flag para identificar objetos texturizados
+- Cada cubo tiene material individual, permitiendo control granular
+- Objetos antiguos mantienen su color original, nuevos usan textura seleccionada
+
+**3. Cálculo de Coordenadas UV en GPU Raytracer**
+```glsl
+// En raytracer.comp - Cálculo UV por cara del cubo
+vec2 calculateCubeUV(vec3 position, vec3 normal) {
+    vec3 absNormal = abs(normal);
+    // Determina cara según normal dominante
+    if (absNormal.x > absNormal.y && absNormal.x > absNormal.z) {
+        return vec2(position.y + 0.5, position.z + 0.5);  // Cara X
+    } else if (absNormal.y > absNormal.x && absNormal.y > absNormal.z) {
+        return vec2(position.x + 0.5, position.z + 0.5);  // Cara Y
+    } else {
+        return vec2(position.x + 0.5, position.y + 0.5);  // Cara Z
+    }
+}
+
+vec3 sampleTexture(vec2 uv, int objectIndex) {
+    float reflectivity = materialData[objectIndex].a;
+    // Flag negativo indica uso de textura
+    if (u_hasTexture == 1 && reflectivity < 0.0) {
+        vec4 texColor = texture(u_selectedTexture, uv);
+        return texColor.rgb;
+    } else {
+        return materialData[objectIndex].rgb;  // Color material normal
+    }
+}
+```
+
+**4. Actualización Dinámica de Texturas**
+- Texturas se actualizan en cada frame del render principal
+- Se bindean a unidad de textura específica del GPU (texture unit 1)
+- Shader verifica `u_hasTexture` y aplica textura solo a objetos marcados
+
+**5. Optimización de Recursos**
+- Reciclaje de buffers OpenGL para evitar leaks de memoria
+- Conversión eficiente de datos PIL → numpy → float32 para GPU
+- Reutilización de texturas sin recargar imágenes innecesariamente
+
+#### Panorama General del Funcionamiento
+1. **Usuario selecciona imagen** desde panel izquierdo → se carga y convierte
+2. **Se marca flag global** `u_hasTexture = 1` y se bindea textura
+3. **Nuevos cubos creados** reciben material con `reflectivity = -0.5`
+4. **Shader calcula UV** basándonos en geometría local de cada cara
+5. **Se samplea textura** usando coordenadas calculadas → imagen aparece en objeto
+
+Este sistema permite **texturizado realista individual por objeto** en tiempo real con raytracing GPU, sin afectar objetos existentes y manteniendo solvencia memoria.
+
+### Optimizaciones Adicionales Implementadas
+
+- **Downsampling de imágenes**: Limité el tamaño máximo de las texturas a 512x512 píxeles para evitar sobrecarga de memoria
+- **Cache inteligente**: Agregué flags para procesar texturas solo cuando cambian, no cada frame
+- **Validación de archivos**: Agregué verificación de imágenes corruptas para evitar errores
+- **Conversión optimizada**: Convertir datos solo cuando es necesario, evitando procesamiento innecesario
+
+### Líneas de Código Modificadas
+
+#### Optimización 1: Downsampling de Imágenes (`src/ui_overlay.py`)
+```python
+# Línea ~650: Función _load_image_as_texture
+if width > max_texture_size or height > max_texture_size:
+    img.thumbnail((max_texture_size, max_texture_size), Image.Resampling.LANCZOS)
+```
+
+#### Optimización 2: Cache Inteligente (`src/ui_overlay.py`)
+```python
+# Líneas ~160-165: Variables de instancia agregadas
+self._processed_texture = None  # Textura ya procesada y lista para GPU (caché)
+self._gpu_texture_ready = False  # Flag que indica si textura GPU está actualizada
+```
+
+#### Optimización 3: Validación de Archivos (`src/ui_overlay.py`)
+```python
+# Línea ~685: Validación en _load_image_as_texture
+if width == 0 or height == 0:
+    raise ValueError("Imagen inválida o corrupta")
+```
+
+#### Optimización 4: Conversión Optimizada (`src/window.py`)
+```python
+# Líneas ~418-425: Modificación en on_draw
+if self.gui.side_panel._gpu_texture_ready == False:
+    if self.scene and hasattr(self.scene, 'raytracer'):
+        current_texture = self.gui.side_panel.get_current_texture()
+        self.scene.raytracer.set_texture(current_texture)
+        self.gui.side_panel._gpu_texture_ready = True
+```

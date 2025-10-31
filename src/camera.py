@@ -14,19 +14,19 @@ class Camera:
         self.__sky_color_bottom = None
         self.world_up = glm.vec3(*up)  # Store the world up vector
 
-        # Calculate initial yaw and pitch from target
+        # Calcular yaw y pitch inicial desde target
         self.yaw = 0.0
         self.pitch = 0.0
         self._update_yaw_pitch_from_target()
 
     def set_sky_colors(self, top, bottom):
-        self.__sky_color_top = glm.vec3(*top)      # Solo RGB
-        self.__sky_color_bottom = glm.vec3(*bottom)# Solo RGB
+        self.__sky_color_top = glm.vec3(*top)      
+        self.__sky_color_bottom = glm.vec3(*bottom)
     
     def get_sky_gradient(self, height):
         point = pow(0.5 * (height + 1.0), 1.5)
         return (1.0 - point) * self.__sky_color_bottom + point * self.__sky_color_top
-    # Esta función fue cambiada: ahora retorna RGBA para evitar errores de broadcasting.
+   
 
     @property
     def aspect_ratio(self):
@@ -84,31 +84,30 @@ class Camera:
         return glm.lookAt(eye, center, up)
 
     def rotate(self, yaw_delta, pitch_delta):
+        # Nuevo: rotations para controles de UI (ratón)
         self.yaw += yaw_delta
         self.pitch += pitch_delta
-        # Clamp pitch to avoid gimbal lock
+        # Evitar gimbal lock clampando pitch
         self.pitch = glm.clamp(self.pitch, -glm.radians(89.0), glm.radians(89.0))
 
-        # Update target and view after rotation
+        # Actualizar target después de rotación
         self.target = self.position + self.forward
         self.update_view()
 
     def raycast(self, u, v):
-        # Paso 1: Convertir screen coords (0-1) a NDC (-1 a 1)
-        # NDC: x -1 left to 1 right, y -1 bottom to 1 top
-        # Screen: u 0 left to 1 right, v 0 top to 1 bottom
+        # Convertir coordenadas screen (0-1) a NDC (-1 a 1)
         ndc_x = 2.0 * u - 1.0
-        ndc_y = - (2.0 * v - 1.0)  # Flip y: v=0 -> 1 (top), v=1 -> -1 (bottom)
+        ndc_y = - (2.0 * v - 1.0)  # Invertir y: v=0 -> 1 (arriba), v=1 -> -1 (abajo)
 
-        # Paso 2: Calcular dirección en near plane usando proyección perspectiva correcta
+        # Calcular dirección en plano cercano usando proyección perspectiva
         tan_fov_half = math.tan(math.radians(self.fov) / 2.0)
         near_plane_dir = glm.vec3(
             ndc_x * self.aspect * tan_fov_half,
             ndc_y * tan_fov_half,
-            -1.0  # Pointing into screen (negative Z)
+            -1.0  # Apuntando dentro de pantalla (Z negativo)
         )
 
-        # Paso 3: Transformar por la vista inversa para llevar a espacio mundo
+        # Transformar por vista inversa para llevar a espacio mundo
         view_matrix = self.get_view_matrix_rotated()
         inv_view = glm.inverse(view_matrix)
         world_dir = glm.normalize(inv_view * glm.vec4(near_plane_dir, 0.0))
