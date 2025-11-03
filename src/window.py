@@ -12,7 +12,10 @@ class Window(pyglet.window.Window):
         self.scene = None
         self.set_minimum_size(400, 300)
         self.keys = set()
-        self.selected_object = None
+        self.selected_objects = []  # Lista para selección múltiple
+        self.is_dragging_selection = False  # Para selección por arrastre
+        self.selection_start_x = 0
+        self.selection_start_y = 0
         self.is_dragging_object = False
         self.is_moving_camera = False
         self.last_mouse_x = 0
@@ -44,6 +47,31 @@ class Window(pyglet.window.Window):
             if self.scene and hasattr(self.scene, 'raytracer'):
                 current_texture = self.gui.side_panel.get_current_texture()
                 self.scene.raytracer.set_texture(current_texture)
+
+                # Aplicar textura a TODOS los objetos que tienen reflectividad negativa (flag de textura)
+                if current_texture:
+                    # Buscar objetos con flag de textura (reflectivity < 0) y marcarlos
+                    textured_objects = 0
+                    for obj in self.scene.objects:
+                        if hasattr(obj, 'material') and hasattr(obj.material, 'reflectivity'):
+                            if obj.material.reflectivity < 0:  # Ya tiene flag de textura
+                                obj._has_texture = True
+                                textured_objects += 1
+                    if textured_objects > 0:
+                        print(f"Textura aplicada a {textured_objects} objetos (todos los que tienen flag de textura)")
+                elif not current_texture:
+                    # Remover textura: cambiar reflectividad a positiva para objetos que tenían textura
+                    for obj in self.scene.objects:
+                        if hasattr(obj, '_has_texture') and obj._has_texture:
+                            if hasattr(obj, 'material') and hasattr(obj.material, 'reflectivity'):
+                                obj.material.reflectivity = abs(obj.material.reflectivity)  # Hacer positiva
+                            obj._has_texture = False
+                    print("Textura removida de todos los objetos")
+
+                # Actualizar buffers GPU después de cambiar materiales
+                if hasattr(self.scene, 'update_gpu_buffers'):
+                    self.scene.update_gpu_buffers()
+
                 self.gui.side_panel._gpu_texture_ready = True
 
         # Render 3D scene
@@ -54,13 +82,15 @@ class Window(pyglet.window.Window):
         if self.gui:
             self.gui.render()
 
+
+
         # No need to render selection spheres - using direct OBB hit detection
 
     def on_resize(self, width, height):
         super().on_resize(width, height)
-        if self.scene:
-            # Calculate scene viewport dimensions (accounting for side panel on right)
-            panel_width_ratio = 0.25
+        if self.scene and self.gui:
+            # Get current panel width ratio from GUI
+            panel_width_ratio = self.gui.side_panel.panel_width_ratio
             scene_width = int(width * (1 - panel_width_ratio))
             scene_height = height
             self.scene.on_resize(scene_width, scene_height)
@@ -74,17 +104,42 @@ class Window(pyglet.window.Window):
         elif symbol == pyglet.window.key.C and self.current_tool == "select":
             self._cycle_cube_selection()
         elif symbol == pyglet.window.key.ENTER or symbol == pyglet.window.key.RETURN:
-            if self.current_tool == "delete" and self.selected_object:
-                self.scene.remove_object(self.selected_object)
-                self.selected_object = None
+            if self.current_tool == "delete" and self.selected_objects:
+                for obj in self.selected_objects[:]:  # Copia para evitar problemas de modificación durante iteración
+                    self.scene.remove_object(obj)
+                self.selected_objects = []
                 self.current_cube_index = -1
-                print("Object deleted successfully")
+                print(f"{len(self.selected_objects)} objects deleted successfully")
                 if hasattr(self.scene, 'update_gpu_buffers'):
                     self.scene.update_gpu_buffers()
         elif symbol == pyglet.window.key.NUM_1:
             self._add_cube_at_camera()
         elif symbol == pyglet.window.key.NUM_2:
             self._add_sphere_at_camera()
+        elif symbol == pyglet.window.key.R:
+            # Cambiar a modo rotación
+            self.current_tool = "rotate"
+            self.gui.side_panel.set_selected_tool("rotate")
+            print("Rotate mode activated - use WASD to rotate selected objects")
+        elif symbol == pyglet.window.key.T:
+            # Cambiar a modo escala
+            self.current_tool = "scale"
+            self.gui.side_panel.set_selected_tool("scale")
+            print("Scale mode activated - use WASD to scale selected objects")
+        elif symbol == pyglet.window.key.LEFT:
+            # Reducir ancho del panel (solo si no hay modificadores)
+            if modifiers == 0 and self.gui:
+                current_ratio = self.gui.side_panel.panel_width_ratio
+                new_ratio = max(0.2, current_ratio - 0.05)  # Reducir en incrementos de 5%
+                self.gui.set_panel_width_ratio(new_ratio)
+                print(f"Panel width decreased to {new_ratio:.2f} ({new_ratio*100:.0f}%)")
+        elif symbol == pyglet.window.key.RIGHT:
+            # Aumentar ancho del panel (solo si no hay modificadores)
+            if modifiers == 0 and self.gui:
+                current_ratio = self.gui.side_panel.panel_width_ratio
+                new_ratio = min(0.5, current_ratio + 0.05)  # Aumentar en incrementos de 5%
+                self.gui.set_panel_width_ratio(new_ratio)
+                print(f"Panel width increased to {new_ratio:.2f} ({new_ratio*100:.0f}%)")
 
     def _handle_panel_click(self, panel_x_ndc, panel_y_ndc):
         """Handle clicks in the panel area"""
@@ -99,12 +154,18 @@ class Window(pyglet.window.Window):
 
             if tool == "camera":
                 # Camera mode: deseleccionar todos los cubos para permitir movimiento de cámara
-                self.selected_object = None
+                self.selected_objects = []
                 self.current_cube_index = -1
                 print("Camera mode activated - all objects deselected")
             elif tool == "select":
                 # Select mode: activado, usar tecla C para cyclear objetos
                 print("Select mode activated - use C key to cycle through objects")
+            elif tool == "rotate":
+                # Rotate mode: usar WASD para rotar objetos seleccionados
+                print("Rotate mode activated - use WASD to rotate selected objects")
+            elif tool == "scale":
+                # Scale mode: usar WASD para escalar objetos seleccionados
+                print("Scale mode activated - use WASD to scale selected objects")
             elif tool == "add_cube":
                 if self.scene and hasattr(self.scene, 'add_object_at_position'):
                     success = self._add_cube_at_screen_center()
@@ -176,12 +237,21 @@ class Window(pyglet.window.Window):
             self.keys.remove(symbol)
 
     def on_mouse_press(self, x, y, button, modifiers):
-        if self.scene is None:
+        if self.scene is None or not self.gui:
             return
+
+        # Convert screen coordinates to NDC for GUI handling
+        x_ndc = (x / self.width) * 2 - 1
+        y_ndc = (y / self.height) * 2 - 1
+
+        # First, let the GUI handle mouse events (for resizing, etc.)
+        if self.gui.handle_mouse_press(x_ndc, y_ndc, button):
+            return  # GUI handled the event
 
         if button == pyglet.window.mouse.LEFT:
             # Check if click is in panel area (right side)
-            panel_width_pixels = int(self.width * 0.25)
+            panel_width_ratio = self.gui.side_panel.panel_width_ratio
+            panel_width_pixels = int(self.width * panel_width_ratio)
             scene_width_pixels = self.width - panel_width_pixels
 
             if x >= scene_width_pixels:
@@ -189,6 +259,13 @@ class Window(pyglet.window.Window):
                 panel_x_ndc = ((x - scene_width_pixels) / panel_width_pixels) * 2 - 1
                 panel_y_ndc = (y / self.height) * 2 - 1
                 self._handle_panel_click(panel_x_ndc, panel_y_ndc)
+            else:
+                # Click in scene area - handle selection
+                if self.current_tool == "select":
+                    self.is_dragging_selection = True
+                    self.selection_start_x = x
+                    self.selection_start_y = y
+                    print("Starting selection drag")
 
         elif button == pyglet.window.mouse.RIGHT:
             self.is_moving_camera = True
@@ -196,8 +273,20 @@ class Window(pyglet.window.Window):
             self.set_exclusive_mouse(True)
 
     def on_mouse_release(self, x, y, button, modifiers):
+        # Convert screen coordinates to NDC for GUI handling
+        x_ndc = (x / self.width) * 2 - 1
+        y_ndc = (y / self.height) * 2 - 1
+
+        # Let the GUI handle mouse release events first
+        if self.gui and self.gui.handle_mouse_release(x_ndc, y_ndc, button):
+            return  # GUI handled the event
+
         if button == pyglet.window.mouse.LEFT:
-            if hasattr(self, 'is_dragging_object') and self.is_dragging_object:
+            if self.is_dragging_selection:
+                # Finalizar selección por arrastre
+                self.is_dragging_selection = False
+                self._finish_selection_drag(x, y)
+            elif hasattr(self, 'is_dragging_object') and self.is_dragging_object:
                 self.is_dragging_object = False
                 self.selected_object = None
                 self.set_mouse_visible(True)
@@ -208,6 +297,14 @@ class Window(pyglet.window.Window):
             self.set_exclusive_mouse(False)
 
     def on_mouse_motion(self, x, y, dx, dy):
+        # Convert screen coordinates to NDC for GUI handling
+        x_ndc = (x / self.width) * 2 - 1
+        y_ndc = (y / self.height) * 2 - 1
+
+        # Let the GUI handle mouse motion events first (for resizing)
+        if self.gui and self.gui.handle_mouse_motion(x_ndc, y_ndc, dx, dy):
+            return  # GUI handled the event
+
         # Camera rotation with right mouse button
         if hasattr(self, 'is_moving_camera') and self.is_moving_camera and self.scene and self.scene.camera:
             sensitivity = 0.002
@@ -224,32 +321,85 @@ class Window(pyglet.window.Window):
 
     def update(self, dt):
         move_speed = 0.1
+        rotate_speed = 0.05
+        scale_speed = 0.1
+
         if self.scene and self.scene.camera:
             cam = self.scene.camera
-            direction = glm.vec3(0)
-            if pyglet.window.key.W in self.keys:
-                direction += cam.forward
-            if pyglet.window.key.S in self.keys:
-                direction -= cam.forward
-            if pyglet.window.key.A in self.keys:
-                direction -= cam.right
-            if pyglet.window.key.D in self.keys:
-                direction += cam.right
-            if pyglet.window.key.Q in self.keys:
-                direction += glm.vec3(0, -1, 0)  # Down
-            if pyglet.window.key.E in self.keys:
-                direction += glm.vec3(0, 1, 0)   # Up
 
-            # Simple movement logic
-            if direction == glm.vec3(0):
-                return  # No movement input
+            # Handle different tool modes
+            if self.current_tool == "rotate" and self.selected_objects:
+                # Rotate mode: apply rotation to selected objects
+                for obj in self.selected_objects:
+                    if self._is_object_movable(obj):
+                        # Initialize rotation if not exists
+                        if not hasattr(obj, 'rotation'):
+                            obj.rotation = glm.vec3(0, 0, 0)
 
-            if self.selected_object and self._is_object_movable(self.selected_object):
-                # If object is selected, move the object
-                self.selected_object.position += direction * move_speed
+                        # Apply rotation based on keys
+                        if pyglet.window.key.W in self.keys:
+                            obj.rotation.x += rotate_speed  # Pitch up
+                        if pyglet.window.key.S in self.keys:
+                            obj.rotation.x -= rotate_speed  # Pitch down
+                        if pyglet.window.key.A in self.keys:
+                            obj.rotation.y += rotate_speed  # Yaw left
+                        if pyglet.window.key.D in self.keys:
+                            obj.rotation.y -= rotate_speed  # Yaw right
+                        if pyglet.window.key.Q in self.keys:
+                            obj.rotation.z += rotate_speed  # Roll counterclockwise
+                        if pyglet.window.key.E in self.keys:
+                            obj.rotation.z -= rotate_speed  # Roll clockwise
+
+            elif self.current_tool == "scale" and self.selected_objects:
+                # Scale mode: apply scaling to selected objects
+                for obj in self.selected_objects:
+                    if self._is_object_movable(obj):
+                        # Initialize scale if not exists
+                        if not hasattr(obj, 'scale'):
+                            obj.scale = glm.vec3(1, 1, 1)
+
+                        # Apply scaling based on keys
+                        if pyglet.window.key.W in self.keys:
+                            obj.scale.y += scale_speed  # Scale up in Y
+                        if pyglet.window.key.S in self.keys:
+                            obj.scale.y = max(0.1, obj.scale.y - scale_speed)  # Scale down in Y (min 0.1)
+                        if pyglet.window.key.A in self.keys:
+                            obj.scale.x = max(0.1, obj.scale.x - scale_speed)  # Scale down in X (min 0.1)
+                        if pyglet.window.key.D in self.keys:
+                            obj.scale.x += scale_speed  # Scale up in X
+                        if pyglet.window.key.Q in self.keys:
+                            obj.scale.z = max(0.1, obj.scale.z - scale_speed)  # Scale down in Z (min 0.1)
+                        if pyglet.window.key.E in self.keys:
+                            obj.scale.z += scale_speed  # Scale up in Z
+
             else:
-                # If no object selected, move the camera
-                cam.position += direction * move_speed
+                # Default movement mode (camera or object movement)
+                direction = glm.vec3(0)
+                if pyglet.window.key.W in self.keys:
+                    direction += cam.forward
+                if pyglet.window.key.S in self.keys:
+                    direction -= cam.forward
+                if pyglet.window.key.A in self.keys:
+                    direction -= cam.right
+                if pyglet.window.key.D in self.keys:
+                    direction += cam.right
+                if pyglet.window.key.Q in self.keys:
+                    direction += glm.vec3(0, -1, 0)  # Down
+                if pyglet.window.key.E in self.keys:
+                    direction += glm.vec3(0, 1, 0)   # Up
+
+                # Simple movement logic
+                if direction == glm.vec3(0):
+                    return  # No movement input
+
+                if self.selected_objects and self.current_tool not in ["rotate", "scale"]:
+                    # If objects are selected and not in rotate/scale mode, move all selected objects
+                    for obj in self.selected_objects:
+                        if self._is_object_movable(obj):
+                            obj.position += direction * move_speed
+                else:
+                    # If no object selected or in camera mode, move the camera
+                    cam.position += direction * move_speed
 
             # Force GPU scene re-render
             if hasattr(self.scene, 'raytracer') and self.scene.raytracer:
@@ -307,9 +457,11 @@ class Window(pyglet.window.Window):
             self.scene.update_gpu_buffers()
 
     def _delete_selected_object(self):
-        if self.selected_object and self.scene:
-            self.scene.remove_object(self.selected_object)
-            self.selected_object = None
+        if self.selected_objects and self.scene:
+            for obj in self.selected_objects[:]:  # Copia para evitar problemas de modificación durante iteración
+                self.scene.remove_object(obj)
+            self.selected_objects = []
+            print(f"Deleted {len(self.selected_objects)} objects")
 
     def _get_cube_class(self):
         from .cube import Cube
@@ -331,6 +483,9 @@ class Window(pyglet.window.Window):
         """Crear material por defecto o marcar para usar textura"""
         # Verificar si hay textura seleccionada en el panel
         if hasattr(self.gui, 'side_panel') and self.gui.side_panel.get_current_texture():
+            # Reset GPU texture ready flag so texture gets applied to new objects
+            self.gui.side_panel._gpu_texture_ready = False
+
             # Crear material especial que indica uso de textura
             # Usar reflectividad negativa como flag para textura
             try:
@@ -389,7 +544,7 @@ class Window(pyglet.window.Window):
         return self._add_cube_at_click(center_x, center_y)
 
     def _cycle_cube_selection(self, direction=1):
-        """Cycle through available cubes"""
+        """Cycle through available cubes with multiple selection support"""
         if not self.scene or not self.scene.objects:
             return
 
@@ -398,7 +553,7 @@ class Window(pyglet.window.Window):
 
         if not cubes:
             print("No cubes available to select")
-            self.selected_object = None
+            self.selected_objects = []
             self.current_cube_index = -1
             return
 
@@ -411,9 +566,14 @@ class Window(pyglet.window.Window):
             # Cycle
             self.current_cube_index = (self.current_cube_index + direction) % len(cubes)
 
-        self.selected_object = cubes[self.current_cube_index]
-
-        print(f"Cube selected: {self.selected_object.name if hasattr(self.selected_object, 'name') else 'unnamed'} ({self.current_cube_index + 1}/{len(cubes)})")
+        # For multiple selection, toggle the current cube in/out of selection
+        current_cube = cubes[self.current_cube_index]
+        if current_cube in self.selected_objects:
+            self.selected_objects.remove(current_cube)
+            print(f"Removed from selection: {current_cube.name} ({len(self.selected_objects)} objects selected)")
+        else:
+            self.selected_objects.append(current_cube)
+            print(f"Added to selection: {current_cube.name} ({len(self.selected_objects)} objects selected)")
 
     def _create_basic_shader(self):
         """Create a basic shader as fallback"""
@@ -430,6 +590,63 @@ class Window(pyglet.window.Window):
         if hasattr(self, 'gui') and self.gui and hasattr(self.gui, 'side_panel') and hasattr(self.scene, 'raytracer'):
             current_texture = self.gui.side_panel.get_current_texture()
             self.scene.raytracer.set_texture(current_texture)
+
+    def _finish_selection_drag(self, end_x, end_y):
+        """Finalizar selección por arrastre y seleccionar objetos dentro del rectángulo"""
+        if not self.scene or not self.scene.camera:
+            return
+
+        # Calcular el rectángulo de selección
+        min_x = min(self.selection_start_x, end_x)
+        max_x = max(self.selection_start_x, end_x)
+        min_y = min(self.selection_start_y, end_y)
+        max_y = max(self.selection_start_y, end_y)
+
+        # Si el rectángulo es muy pequeño, considerar como click simple
+        if abs(max_x - min_x) < 5 and abs(max_y - min_y) < 5:
+            print("Selection rectangle too small, treated as click")
+            return
+
+        # Obtener viewport de la escena
+        scene_viewport = self.gui.get_scene_viewport()
+        scene_x, scene_y, scene_width, scene_height = scene_viewport
+
+        # Matriz de proyección y vista para proyectar puntos 3D a 2D
+        projection = self.scene.camera.get_perspective_matrix()
+        view = self.scene.camera.get_view_matrix_rotated()
+        vp_matrix = projection * view
+
+        selected_count = 0
+
+        # Verificar cada objeto movable
+        for obj in self.scene.objects:
+            if not self._is_object_movable(obj):
+                continue
+
+            # Proyectar la posición del objeto a coordenadas de pantalla
+            obj_pos_4d = vp_matrix * glm.vec4(obj.position.x, obj.position.y, obj.position.z, 1.0)
+
+            if obj_pos_4d.w > 0:  # Objeto está frente a la cámara
+                # Normalizar a NDC (-1 a 1)
+                screen_x_ndc = obj_pos_4d.x / obj_pos_4d.w
+                screen_y_ndc = obj_pos_4d.y / obj_pos_4d.w
+
+                # Convertir NDC a coordenadas de pantalla
+                screen_x = scene_x + (screen_x_ndc + 1.0) * 0.5 * scene_width
+                screen_y = scene_y + (screen_y_ndc + 1.0) * 0.5 * scene_height
+
+                # Verificar si el objeto está dentro del rectángulo de selección
+                if min_x <= screen_x <= max_x and min_y <= screen_y <= max_y:
+                    if obj not in self.selected_objects:
+                        self.selected_objects.append(obj)
+                        selected_count += 1
+
+        if selected_count > 0:
+            print(f"Selected {selected_count} objects via drag selection ({len(self.selected_objects)} total selected)")
+        else:
+            print("No objects selected in drag area")
+
+
 
     def run(self):
         pyglet.app.run()

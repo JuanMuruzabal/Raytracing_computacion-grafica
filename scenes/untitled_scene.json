@@ -1,0 +1,68 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "scene_name": "Untitled Scene",
+    "description": ""
+  },
+  "physics_settings": {
+    "gravity_enabled": true,
+    "collision_enabled": true,
+    "gravity_strength": -9.81
+  },
+  "objects": [
+    {
+      "name": "Cube1",
+      "type": "cube",
+      "position": [
+        2.0,
+        -1.001250147819519,
+        5.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "physics": {
+        "mass": 1.0,
+        "gravity_enabled": true,
+        "collision_enabled": true,
+        "bounciness": 0.8,
+        "friction": 0.3,
+        "angular_friction": 0.1
+      }
+    },
+    {
+      "name": "Cube2",
+      "type": "cube",
+      "position": [
+        -2.0,
+        -1.001250147819519,
+        5.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "physics": {
+        "mass": 1.0,
+        "gravity_enabled": true,
+        "collision_enabled": true,
+        "bounciness": 0.8,
+        "friction": 0.3,
+        "angular_friction": 0.1
+      }
+    }
+  ]
+}

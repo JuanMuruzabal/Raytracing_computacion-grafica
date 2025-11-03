@@ -70,6 +70,7 @@ class RayTracerGPU:
        # Para texturas en objetos
        self._current_texture = None
        self._texture_unit = 1  # Unidad de textura diferente para objetos
+       self._ogl_texture = None  # Referencia para mantener viva la textura OpenGL
 
 
     def resize(self, width, height):
@@ -119,25 +120,30 @@ class RayTracerGPU:
             # Convertir textura a formato OpenGL y bind a unidad de textura
             # Los datos están en uint8 (0-255), convertir a float (0-1) para ModernGL
             img_data = texture.image_data.data.astype(np.float32) / 255.0
-            ogl_texture = self.ctx.texture(
+            self._ogl_texture = self.ctx.texture(
                 size=(texture.width, texture.height),
                 components=3,
                 data=img_data.tobytes(),
                 dtype='f4'  # float 4-bytes por componente
             )
-            ogl_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
-            ogl_texture.repeat_x = True
-            ogl_texture.repeat_y = True
-            ogl_texture.use(location=self._texture_unit)
+            self._ogl_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            self._ogl_texture.repeat_x = True
+            self._ogl_texture.repeat_y = True
+            self._ogl_texture.use(location=self._texture_unit)
             self.compute_shader.set_uniform('u_hasTexture', 1)
             self.compute_shader.set_uniform('u_selectedTexture', self._texture_unit)
         else:
+            self._ogl_texture = None
             self.compute_shader.set_uniform('u_hasTexture', 0)
 
     def run(self):
         # Update camera uniforms with current camera state
         self.compute_shader.set_uniform('cameraPosition', self.camera.position)
         self.compute_shader.set_uniform('inverseViewMatrix', self.camera.get_inverse_view_matrix())
+
+        # Ensure texture is bound if it exists
+        if self._ogl_texture is not None:
+            self._ogl_texture.use(location=self._texture_unit)
 
         groups_x = (self.width + 15) // 16
         groups_y = (self.height + 15) // 16

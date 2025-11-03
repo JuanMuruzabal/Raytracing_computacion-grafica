@@ -1,3 +1,4 @@
+import sys
 from .window import Window
 
 from .texture import Texture
@@ -17,10 +18,19 @@ from .quad import Quad
 from .sphere_model import Sphere
 
 def main():
-
-    # Las instrucciones están en el menú de la ventana, no necesitamos console output
-
-    WIDTH, HEIGHT = 800, 600
+    # Permitir especificar tamaño de ventana desde línea de comandos
+    # Uso: python -m src.main [width] [height]
+    if len(sys.argv) >= 3:
+        try:
+            WIDTH = int(sys.argv[1])
+            HEIGHT = int(sys.argv[2])
+            print(f"Usando tamaño personalizado: {WIDTH}x{HEIGHT}")
+        except ValueError:
+            print("Error: Los argumentos deben ser números enteros")
+            WIDTH, HEIGHT = 1400, 900
+    else:
+        # Las instrucciones están en el menú de la ventana, no necesitamos console output
+        WIDTH, HEIGHT = 1400, 900  # Ventana más grande para mejor experiencia de usuario
 
 
     SCENE_TYPE = "gpu"  # Opciones: "normal", "cpu", "gpu"
@@ -130,10 +140,14 @@ def main():
 
         scene = RaySceneGPU(window.ctx, camera, WIDTH, HEIGHT, sprite, material_sprite)
 
-        scene.add_object_at_position(type(cube1), cube1.position, material_plastic, name=cube1.name, scale=cube1.scale, hittable=True)
+        # Add physics-enabled cubes
+        from .physics import PhysicsProperties
+        physics_props = PhysicsProperties(gravity_enabled=True, collision_enabled=True)
 
-        scene.add_object_at_position(type(cube2), cube2.position, material_glass, name=cube2.name, scale=cube2.scale, hittable=True)
+        cube1_physics = scene.add_physics_object(cube1, physics_props)
+        cube2_physics = scene.add_physics_object(cube2, physics_props)
 
+        # Add non-physics floor
         scene.add_object_at_position(type(quad), quad.position, material_ceramic, name=quad.name, scale=quad.scale, animated=False, hittable=False)
 
 

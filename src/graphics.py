@@ -10,7 +10,7 @@ class Graphics:
         self.__ctx = ctx
         self.__model = model
         self.__material = material
-      
+
         self.__vbo = self.create_buffers()
         self.__ibo = self.__ctx.buffer(model.indices.tobytes())
         self.__vao = self.__ctx.vertex_array(
@@ -66,11 +66,43 @@ class Graphics:
     def update_texture(self, texture_name, new_data):
         if texture_name not in self.__textures:
             return ValueError(f"Texture {texture_name} not found")
-        
+
         texture, texture_ctx = self.__textures[texture_name]
         texture.update_data(new_data)
         texture_ctx.write(texture.get_bytes())
     # Esta función fue cambiada: ahora solo sube los datos nuevos, eliminando errores de métodos inexistentes.
+
+    def cleanup(self):
+        """Clean up OpenGL resources to prevent memory leaks"""
+        try:
+            # Release VBOs
+            if hasattr(self, '__vbo') and self.__vbo:
+                for vbo_tuple in self.__vbo:
+                    if len(vbo_tuple) >= 1 and hasattr(vbo_tuple[0], 'release'):
+                        vbo_tuple[0].release()
+
+            # Release IBO
+            if hasattr(self, '__ibo') and self.__ibo:
+                self.__ibo.release()
+
+            # Release VAO
+            if hasattr(self, '__vao') and self.__vao:
+                self.__vao.release()
+
+            # Release textures
+            if hasattr(self, '__textures') and self.__textures:
+                for texture_name, (texture_obj, texture_ctx) in self.__textures.items():
+                    if texture_ctx and hasattr(texture_ctx, 'release'):
+                        texture_ctx.release()
+
+            # Clear references
+            self.__vbo = None
+            self.__ibo = None
+            self.__vao = None
+            self.__textures = {}
+
+        except Exception as e:
+            print(f"Warning: Error during graphics cleanup: {e}")
 
    
 class ComputeGraphics(Graphics):

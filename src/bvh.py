@@ -47,7 +47,12 @@ class BVH:
 
         self.nodes = []
 
-        self.build()
+        # Handle empty primitives case
+        if not prims:
+            # Create a dummy node for empty scenes
+            self.nodes = [BVHNode(aabb_min=(-1, -1, -1), aabb_max=(1, 1, 1))]
+        else:
+            self.build()
 
 
     def build(self):
