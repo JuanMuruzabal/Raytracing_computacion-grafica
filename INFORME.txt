@@ -327,3 +327,262 @@ if self.gui.side_panel._gpu_texture_ready == False:
         self.scene.raytracer.set_texture(current_texture)
         self.gui.side_panel._gpu_texture_ready = True
 ```
+
+## Nuevas Funcionalidades Implementadas
+
+### 1. Selección Múltiple de Objetos con Arrastrar
+**Descripción**: Se implementó la capacidad de seleccionar uno o varios objetos simultáneamente mediante la funcionalidad de arrastrar el mouse, similar a los editores 3D profesionales.
+
+**Cómo funciona**:
+- En modo "select", el usuario puede hacer click y arrastrar para crear un rectángulo de selección
+- Todos los objetos que intersecten con este rectángulo quedan seleccionados
+- Los objetos seleccionados se almacenan en `self.selected_objects` para operaciones en lote
+
+**Implementación técnica** (`src/window.py`):
+```python
+def _finish_selection_drag(self, end_x, end_y):
+    """Finalizar selección por arrastre y seleccionar objetos dentro del rectángulo"""
+    # Calcular rectángulo de selección
+    min_x = min(self.selection_start_x, end_x)
+    max_x = max(self.selection_start_x, end_x)
+    min_y = min(self.selection_start_y, end_y)
+    max_y = max(self.selection_start_y, end_y)
+
+    # Proyectar posiciones 3D de objetos a coordenadas de pantalla
+    # y verificar intersección con rectángulo de selección
+    for obj in self.scene.objects:
+        if not self._is_object_movable(obj):
+            continue
+        # Cálculo de proyección y verificación de intersección
+        # ...
+```
+
+### 2. Rotación y Escalado de Objetos
+**Descripción**: Se agregó funcionalidad completa para rotar y escalar objetos seleccionados usando controles intuitivos.
+
+**Controles**:
+- **Tecla 'R'**: Activa modo rotación
+- **Tecla 'T'**: Activa modo escalado
+- **WASD**: Controla la transformación en los ejes correspondientes
+
+**Implementación técnica** (`src/window.py`):
+```python
+elif self.current_tool == "rotate" and self.selected_objects:
+    # Aplicar rotación a objetos seleccionados
+    for obj in self.selected_objects:
+        if pyglet.window.key.W in self.keys:
+            obj.rotation.x += rotate_speed  # Pitch
+        if pyglet.window.key.A in self.keys:
+            obj.rotation.y += rotate_speed  # Yaw
+        # ... controles adicionales para rotación
+
+elif self.current_tool == "scale" and self.selected_objects:
+    # Aplicar escalado a objetos seleccionados
+    for obj in self.selected_objects:
+        if pyglet.window.key.W in self.keys:
+            obj.scale.y += scale_speed  # Escalar en Y
+        if pyglet.window.key.A in self.keys:
+            obj.scale.x = max(0.1, obj.scale.x - scale_speed)  # Escalar en X
+        # ... controles adicionales para escalado
+```
+
+### 3. Modos de Escena y Edición
+**Descripción**: Se implementó un sistema de modos que permite alternar entre edición de escena y simulación física.
+
+**Modos disponibles**:
+- **Modo Editor**: Permite editar objetos, moverlos, rotarlos, escalarlos
+- **Modo Escena**: Activa la simulación física, guarda estado de objetos y permite ver física en acción
+
+**Implementación técnica** (`src/scene.py`):
+```python
+def set_mode(self, mode: str):
+    """Switch between editor and scene modes"""
+    if mode == "scene":
+        # Guardar estado actual y activar física
+        self.physics_world.save_scene_state()
+        self.current_mode = "scene"
+        print("Entered scene mode - physics simulation active")
+    else:  # mode == "editor"
+        # Restaurar estado y desactivar física
+        self.physics_world.restore_scene_state()
+        self.current_mode = "editor"
+        print("Returned to editor mode. Objects restored to original positions.")
+```
+
+### 4. Controles de Gravedad y Rebote
+**Descripción**: Se agregaron controles para ajustar dinámicamente los parámetros físicos de la simulación.
+
+**Controles disponibles**:
+- **GRAV+ / GRAV-**: Aumentar/disminuir fuerza de gravedad
+- **BOUNCE+ / BOUNCE-**: Aumentar/disminuir rebote global de objetos
+
+**Implementación técnica** (`src/scene.py`):
+```python
+def set_gravity_strength(self, strength: float):
+    """Set gravity strength (negative values for downward gravity)"""
+    self.physics_world.gravity_system.gravity_strength = strength
+    self.physics_world.gravity_system.gravity_vector = glm.vec3(0.0, strength, 0.0)
+
+def set_global_bounciness(self, bounciness: float):
+    """Set bounciness for all physics objects"""
+    for physics_obj in self.physics_world.physics_objects:
+        physics_obj.physics.bounciness = bounciness
+```
+
+### 5. Escalado Adaptativo de UI y Texto
+**Descripción**: Se implementó un sistema de escalado automático que ajusta el tamaño de los elementos de la interfaz según la resolución de la ventana.
+
+**Características**:
+- Cálculo automático de factor de escala basado en dimensiones de ventana
+- Escalado proporcional de botones, texto y espaciado
+- Mantenimiento de legibilidad en diferentes resoluciones
+
+**Implementación técnica** (`src/ui_overlay.py`):
+```python
+def _calculate_base_scale(self):
+    """Calcular factor de escala base basado en el tamaño de la ventana"""
+    base_width = 800
+    base_height = 600
+    width_scale = self.total_width / base_width
+    height_scale = self.total_height / base_height
+    geometric_mean = (width_scale * height_scale) ** 0.5
+    base_scale = 1.0 / geometric_mean
+    return max(0.6, min(1.0, base_scale))
+
+def _get_scaled_button_width(self):
+    """Calcular ancho de botón escalado"""
+    base_width = 0.17
+    base_ratio = 0.35
+    panel_scale = self.panel_width_ratio / base_ratio
+    return base_width * panel_scale * self.base_scale
+```
+
+### 6. Sistema de Física Avanzada
+**Descripción**: Se implementó un sistema completo de física 3D con colisiones, gravedad y propiedades materiales.
+
+**Componentes del sistema**:
+- **GravitySystem**: Maneja fuerzas gravitacionales
+- **CollisionSystem**: Detecta y resuelve colisiones entre objetos
+- **PhysicsWorld**: Coordina todos los sistemas físicos
+- **PhysicsProperties**: Propiedades físicas por objeto (masa, rebote, fricción)
+
+**Implementación técnica** (`src/physics.py`):
+```python
+class PhysicsWorld:
+    """Main physics world that coordinates all physics systems"""
+    def __init__(self, gravity_strength: float = -9.81):
+        self.gravity_system = GravitySystem(gravity_strength)
+        self.collision_system = CollisionSystem()
+        self.physics_objects: List[PhysicsObject] = []
+
+    def update(self, delta_time: float):
+        """Update physics simulation"""
+        # Aplicar gravedad
+        for physics_obj in self.physics_objects:
+            self.gravity_system.apply_gravity(physics_obj, delta_time)
+
+        # Resolver colisiones
+        self._handle_collisions()
+
+        # Integrar velocidades
+        for physics_obj in self.physics_objects:
+            physics_obj.obj.position += physics_obj.physics.velocity * delta_time
+```
+
+### 7. Controles de Simulación Física
+**Descripción**: Se agregaron controles completos para gestionar la simulación física desde la interfaz.
+
+**Controles disponibles**:
+- **PLAY/PAUSE**: Iniciar/detener simulación
+- **RESET**: Restaurar objetos a posiciones iniciales
+- **GRAVEDAD ON/OFF**: Activar/desactivar gravedad
+- **COLISION ON/OFF**: Activar/desactivar colisiones
+
+**Implementación técnica** (`src/scene.py`):
+```python
+def play_physics(self):
+    """Start physics simulation"""
+    self.physics_paused = False
+    print("Physics simulation started")
+
+def pause_physics(self):
+    """Pause physics simulation"""
+    self.physics_paused = True
+    print("Physics simulation paused")
+
+def reset_physics(self):
+    """Reset physics simulation to initial state"""
+    self.physics_world.restore_scene_state()
+    print("Physics simulation reset")
+```
+
+### 8. Escenas Predefinidas
+**Descripción**: Se implementaron escenas predefinidas para demostrar diferentes configuraciones físicas.
+
+**Escenas disponibles**:
+- **RANDOM**: Escena con objetos colocados aleatoriamente
+- **STACK**: Objetos apilados para demostrar estabilidad
+- **DOMINO**: Efecto dominó con objetos en fila
+
+**Implementación técnica** (`src/scene.py`):
+```python
+def create_realistic_scene(self, scene_type: str):
+    """Create predefined physics scenes"""
+    if scene_type == "random":
+        # Colocar objetos en posiciones aleatorias
+        for i in range(10):
+            # Crear y posicionar objetos aleatoriamente
+    elif scene_type == "stack":
+        # Crear pila de objetos
+    elif scene_type == "domino":
+        # Crear fila de objetos para efecto dominó
+```
+
+### 9. Sistema de Guardado y Carga de Escenas
+**Descripción**: Se implementó funcionalidad para guardar y cargar estados completos de escena.
+
+**Características**:
+- Guardado de posiciones, rotaciones y escalas de objetos
+- Guardado de configuraciones físicas
+- Carga de escenas desde archivos JSON
+
+**Implementación técnica** (`src/scene.py`):
+```python
+def save_scene(self, filename: str = None):
+    """Save current scene state to file"""
+    scene_data = {
+        "objects": [],
+        "physics_settings": {
+            "gravity_strength": self.get_gravity_strength(),
+            "physics_running": self.is_physics_running(),
+        }
+    }
+    # Serializar estado de objetos y configuración
+
+def load_scene(self, filename: str):
+    """Load scene from file"""
+    # Deserializar y restaurar estado de escena
+```
+
+### 10. Optimizaciones de Rendimiento para Física
+**Descripción**: Se implementaron optimizaciones específicas para mantener rendimiento en simulaciones físicas complejas.
+
+**Optimizaciones**:
+- **Timestep fijo**: Actualización física a 60 FPS constante
+- **Detección de colisiones optimizada**: Uso de AABB para colisiones rápidas
+- **Caché de estado**: Evitar cálculos redundantes
+- **Límites de objetos**: Prevención de sobrecarga del sistema
+
+**Implementación técnica** (`src/physics.py`):
+```python
+class PhysicsWorld:
+    def __init__(self, gravity_strength: float = -9.81):
+        self.fixed_timestep = 1.0 / 60.0  # 60 FPS physics
+        self.accumulated_time = 0.0
+
+    def update(self, delta_time: float):
+        self.accumulated_time += delta_time
+        while self.accumulated_time >= self.fixed_timestep:
+            self._fixed_update(self.fixed_timestep)
+            self.accumulated_time -= self.fixed_timestep
+```

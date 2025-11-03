@@ -3,6 +3,7 @@ import moderngl
 import glm
 import math
 import numpy as np
+import time
 from .ui_overlay import SimpleGUI
 
 class Window(pyglet.window.Window):
@@ -25,6 +26,10 @@ class Window(pyglet.window.Window):
         self.current_cube_index = -1  # índice del cubo seleccionado (-1 = ninguno seleccionado)
         self.showing_menu = False
         self.gui = SimpleGUI(self.ctx, kwargs.get('width', 800), kwargs.get('height', 600), self)
+        # Debugging for selection rectangle (throttled prints)
+        self._debug_selection = True
+        self._last_debug_print = 0.0
+
         pyglet.clock.schedule_interval(self.update, 1/60.0)
 
         # No sphere materials needed - using direct OBB
@@ -77,6 +82,10 @@ class Window(pyglet.window.Window):
         # Render 3D scene
         if self.scene:
             self.scene.render()
+
+        # Render selection rectangle if dragging
+        if self.is_dragging_selection:
+            self._render_selection_rectangle()
 
         # Render UI panel (this handles its own viewport)
         if self.gui:
@@ -265,6 +274,9 @@ class Window(pyglet.window.Window):
                     self.is_dragging_selection = True
                     self.selection_start_x = x
                     self.selection_start_y = y
+                    # Initialize current mouse tracking so the rectangle starts exactly at the click
+                    self._current_mouse_x = x
+                    self._current_mouse_y = y
                     print("Starting selection drag")
 
         elif button == pyglet.window.mouse.RIGHT:
@@ -305,7 +317,35 @@ class Window(pyglet.window.Window):
         if self.gui and self.gui.handle_mouse_motion(x_ndc, y_ndc, dx, dy):
             return  # GUI handled the event
 
+        # Track current mouse position for selection rectangle rendering
+        if self.is_dragging_selection:
+            self._current_mouse_x = x
+            self._current_mouse_y = y
+
         # Camera rotation with right mouse button
+        if hasattr(self, 'is_moving_camera') and self.is_moving_camera and self.scene and self.scene.camera:
+            sensitivity = 0.002
+            cam = self.scene.camera
+            cam.rotate(-dx * sensitivity, -dy * sensitivity)
+
+    def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
+        """Handle mouse drag (pyglet sends this while a button is held). Update
+        drag selection coordinates and support camera rotation on right-button drag.
+        """
+        # Convert screen coordinates to NDC for GUI handling
+        x_ndc = (x / self.width) * 2 - 1
+        y_ndc = (y / self.height) * 2 - 1
+
+        # Let GUI handle drag-like motion if it wants to (resizing, etc.)
+        if self.gui and self.gui.handle_mouse_motion(x_ndc, y_ndc, dx, dy):
+            return
+
+        # Update current mouse position for selection rectangle while left-button dragging
+        if self.is_dragging_selection and (buttons & pyglet.window.mouse.LEFT):
+            self._current_mouse_x = x
+            self._current_mouse_y = y
+
+        # Camera rotation when right button is held (mirror on_mouse_motion behavior)
         if hasattr(self, 'is_moving_camera') and self.is_moving_camera and self.scene and self.scene.camera:
             sensitivity = 0.002
             cam = self.scene.camera
@@ -591,6 +631,127 @@ class Window(pyglet.window.Window):
             current_texture = self.gui.side_panel.get_current_texture()
             self.scene.raytracer.set_texture(current_texture)
 
+    def _render_selection_rectangle(self):
+        """Render the selection rectangle during drag operation"""
+        if not self.is_dragging_selection:
+            return
+
+        # Get current mouse position (we need to track it during motion)
+        current_mouse_x = getattr(self, '_current_mouse_x', self.selection_start_x)
+        current_mouse_y = getattr(self, '_current_mouse_y', self.selection_start_y)
+
+        # Calculate rectangle bounds
+        min_x = min(self.selection_start_x, current_mouse_x)
+        max_x = max(self.selection_start_x, current_mouse_x)
+        min_y = min(self.selection_start_y, current_mouse_y)
+        max_y = max(self.selection_start_y, current_mouse_y)
+
+        # Prefer drawing the rectangle in the scene viewport (left area) so it aligns
+        # with where the user clicked (and accounts for the UI side panel).
+        scene_viewport = None
+        if hasattr(self, 'gui') and self.gui:
+            try:
+                scene_viewport = self.gui.get_scene_viewport()
+            except Exception:
+                scene_viewport = None
+
+        # If we have a valid scene viewport, clamp the rectangle and convert
+        # coordinates to NDC relative to that viewport. Otherwise fall back to
+        # full-window coordinates.
+        if scene_viewport:
+            scene_x, scene_y, scene_width, scene_height = scene_viewport
+
+            # Clamp the rectangle to the scene viewport so the overlay doesn't draw over the side panel
+            min_x = max(min_x, scene_x)
+            max_x = min(max_x, scene_x + scene_width)
+            min_y = max(min_y, scene_y)
+            max_y = min(max_y, scene_y + scene_height)
+
+            # Convert to viewport-local NDC (-1..1)
+            left = ((min_x - scene_x) / float(scene_width)) * 2.0 - 1.0
+            right = ((max_x - scene_x) / float(scene_width)) * 2.0 - 1.0
+            bottom = ((min_y - scene_y) / float(scene_height)) * 2.0 - 1.0
+            top = ((max_y - scene_y) / float(scene_height)) * 2.0 - 1.0
+        else:
+            # Full-window fallback
+            left = (min_x / float(self.width)) * 2.0 - 1.0
+            right = (max_x / float(self.width)) * 2.0 - 1.0
+            bottom = (min_y / float(self.height)) * 2.0 - 1.0
+            top = (max_y / float(self.height)) * 2.0 - 1.0
+
+        # Create rectangle vertices (counter-clockwise)
+        vertices = np.array([
+            left, bottom, 0.0,
+            right, bottom, 0.0,
+            right, top, 0.0,
+            left, top, 0.0
+        ], dtype='f4')
+
+        # Indices for line loop
+        indices = np.array([0, 1, 2, 3, 0], dtype='i4')
+
+        # Create shader program for selection rectangle
+        vertex_shader = """
+        #version 330
+        in vec3 in_pos;
+        void main() {
+            gl_Position = vec4(in_pos, 1.0);
+        }
+        """
+
+        fragment_shader = """
+        #version 330
+        out vec4 out_color;
+        void main() {
+            out_color = vec4(0.0, 1.0, 0.0, 0.8);  // Semi-transparent green
+        }
+        """
+
+        program = self.ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
+
+        # Create buffers
+        vbo = self.ctx.buffer(vertices.tobytes())
+        ibo = self.ctx.buffer(indices.tobytes())
+
+        # Create vertex array
+        vao = self.ctx.vertex_array(program, [(vbo, '3f', 'in_pos')], ibo)
+
+        # Set viewport to scene viewport (if available) so the NDC mapping is correct
+        if scene_viewport:
+            self.ctx.viewport = (int(scene_x), int(scene_y), int(scene_width), int(scene_height))
+        else:
+            self.ctx.viewport = (0, 0, self.width, self.height)
+
+        # Lightweight throttled debug printing to help verify coordinates during drag
+        if getattr(self, '_debug_selection', False):
+            now = time.time()
+            if now - getattr(self, '_last_debug_print', 0.0) > 0.2:  # print at most 5x/sec
+                self._last_debug_print = now
+                try:
+                    print(f"[sel-debug] scene_viewport={scene_viewport} start=({self.selection_start_x},{self.selection_start_y}) current=({current_mouse_x},{current_mouse_y}) clamped=({min_x},{min_y})-({max_x},{max_y}) ndc=({left:.3f},{bottom:.3f})-({right:.3f},{top:.3f})")
+                except Exception:
+                    # Don't raise from debug prints
+                    pass
+
+        # Disable depth test for overlay
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.enable(moderngl.BLEND)
+        self.ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
+
+        # Render the rectangle outline
+        self.ctx.line_width = 2.0
+        vao.render(moderngl.LINE_STRIP)
+
+        # Clean up
+        vao.release()
+        ibo.release()
+        vbo.release()
+        program.release()
+
+        # Re-enable depth test
+        self.ctx.enable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.BLEND)
+
     def _finish_selection_drag(self, end_x, end_y):
         """Finalizar selección por arrastre y seleccionar objetos dentro del rectángulo"""
         if not self.scene or not self.scene.camera:
@@ -606,6 +767,10 @@ class Window(pyglet.window.Window):
         if abs(max_x - min_x) < 5 and abs(max_y - min_y) < 5:
             print("Selection rectangle too small, treated as click")
             return
+
+        # Limpiar selección anterior antes de nueva selección
+        self.selected_objects = []
+        self.current_cube_index = -1
 
         # Obtener viewport de la escena
         scene_viewport = self.gui.get_scene_viewport()
@@ -623,8 +788,16 @@ class Window(pyglet.window.Window):
             if not self._is_object_movable(obj):
                 continue
 
-            # Proyectar la posición del objeto a coordenadas de pantalla
-            obj_pos_4d = vp_matrix * glm.vec4(obj.position.x, obj.position.y, obj.position.z, 1.0)
+            # Compute object's clip-space position using full model matrix.
+            # Using model * vec4(0,0,0,1) is more robust than trusting obj.position alone
+            # (some objects may have non-zero local transforms).
+            try:
+                model_mat = obj.get_model_matrix()
+            except Exception:
+                # Fallback to using position if get_model_matrix is not available
+                model_mat = glm.translate(glm.mat4(1.0), obj.position)
+
+            obj_pos_4d = projection * view * model_mat * glm.vec4(0.0, 0.0, 0.0, 1.0)
 
             if obj_pos_4d.w > 0:  # Objeto está frente a la cámara
                 # Normalizar a NDC (-1 a 1)
@@ -636,10 +809,69 @@ class Window(pyglet.window.Window):
                 screen_y = scene_y + (screen_y_ndc + 1.0) * 0.5 * scene_height
 
                 # Verificar si el objeto está dentro del rectángulo de selección
-                if min_x <= screen_x <= max_x and min_y <= screen_y <= max_y:
-                    if obj not in self.selected_objects:
-                        self.selected_objects.append(obj)
-                        selected_count += 1
+                # Instead of selecting based only on the object's origin, project
+                # the object's model-space bounding box (unit cube corners) and
+                # test if its screen-space bounding box intersects the
+                # selection rectangle. This better matches what the user sees
+                # when objects are scaled/rotated.
+                try:
+                    # Local unit-cube corners at +/-1 (matches Cube vertices)
+                    corners = [glm.vec4(x, y, z, 1.0) for x in (-1.0, 1.0) for y in (-1.0, 1.0) for z in (-1.0, 1.0)]
+
+                    screen_xs = []
+                    screen_ys = []
+                    any_in_front = False
+
+                    mvp = projection * view * model_mat
+                    for c in corners:
+                        clip = mvp * c
+                        if clip.w == 0:
+                            continue
+                        ndc_x = clip.x / clip.w
+                        ndc_y = clip.y / clip.w
+                        # track if any corner is in front of camera
+                        if clip.w > 0:
+                            any_in_front = True
+
+                        sx = scene_x + (ndc_x + 1.0) * 0.5 * scene_width
+                        sy = scene_y + (ndc_y + 1.0) * 0.5 * scene_height
+                        screen_xs.append(sx)
+                        screen_ys.append(sy)
+
+                    if not screen_xs or not screen_ys:
+                        inside = False
+                        bbox = (0,0,0,0)
+                    else:
+                        sx_min = min(screen_xs)
+                        sx_max = max(screen_xs)
+                        sy_min = min(screen_ys)
+                        sy_max = max(screen_ys)
+                        bbox = (sx_min, sy_min, sx_max, sy_max)
+
+                        # Test bbox intersection with selection rectangle
+                        horiz_overlap = not (sx_max < min_x or sx_min > max_x)
+                        vert_overlap = not (sy_max < min_y or sy_min > max_y)
+                        inside = horiz_overlap and vert_overlap and any_in_front
+
+                    if self._debug_selection:
+                        try:
+                            print(f"[sel-finish] {obj.name} bbox=({bbox[0]:.1f},{bbox[1]:.1f})-({bbox[2]:.1f},{bbox[3]:.1f}) inside={inside}")
+                        except Exception:
+                            pass
+
+                    if inside:
+                        if obj not in self.selected_objects:
+                            self.selected_objects.append(obj)
+                            selected_count += 1
+                except Exception as e:
+                    # If anything goes wrong with bbox test, fall back to center test
+                    if self._debug_selection:
+                        print(f"[sel-finish] bbox test error for {obj.name}: {e}")
+                    inside = (min_x <= screen_x <= max_x and min_y <= screen_y <= max_y)
+                    if inside:
+                        if obj not in self.selected_objects:
+                            self.selected_objects.append(obj)
+                            selected_count += 1
 
         if selected_count > 0:
             print(f"Selected {selected_count} objects via drag selection ({len(self.selected_objects)} total selected)")
