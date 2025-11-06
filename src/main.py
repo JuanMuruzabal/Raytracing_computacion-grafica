@@ -86,7 +86,7 @@ def main():
 
     albedo_blue = Texture("u_texture", WIDTH, HEIGHT, 3, None, (0, 0, 255))
 
-    albedo_pearl = Texture("u_texture", WIDTH, HEIGHT, 3, None, (120, 90, 90))
+    albedo_floor = Texture("u_texture", WIDTH, HEIGHT, 3, None, (80, 80, 80))
 
     sprite_texture = Texture(width=WIDTH, height=HEIGHT, channels_amount= config["sprite_channels_amount"], color= config["sprite_default_color"])
 
@@ -95,7 +95,7 @@ def main():
 
     material_glass = StandardMaterial(shader, albedo_blue, reflectivity=0.2)
 
-    material_ceramic = StandardMaterial(shader, albedo_pearl, reflectivity=0.1)
+    material_floor = StandardMaterial(shader, albedo_floor, reflectivity=0.1)
 
     material_sprite = Material(shader_sprite, textures_data=[sprite_texture])
 
@@ -104,7 +104,7 @@ def main():
 
     cube2 = Cube((-2, 0, 5), (0, 0, 0), (1, 1, 1), name="Cube2")
 
-    quad = Quad((0, -3, 0), (-90, 0, 0), (10, 15, 1), name="Floor", animated=False, hittable=False)
+    quad = Quad((0, -5, 0), (-90, 0, 0), (20, 20, 2), name="Floor", animated=False, hittable=True)
 
     sprite = Quad((0, 0, 0), (0, 0, 0), (10, 15, 1), name="Sprite", animated=False, hittable=False)
 
@@ -133,7 +133,7 @@ def main():
 
         scene.add_object(cube2, material_glass)
 
-        scene.add_object(quad, material_ceramic)
+        scene.add_object(quad, material_floor)
 
 
     elif SCENE_TYPE == "gpu":
@@ -147,8 +147,15 @@ def main():
         cube1_physics = scene.add_physics_object(cube1, physics_props)
         cube2_physics = scene.add_physics_object(cube2, physics_props)
 
-        # Add non-physics floor
-        scene.add_object_at_position(type(quad), quad.position, material_ceramic, name=quad.name, scale=quad.scale, animated=False, hittable=False)
+        # Add floor as physics object (immovable)
+        floor_physics_props = PhysicsProperties(
+            mass=1000000.0,  # Very high mass to make it immovable
+            gravity_enabled=False,  # Floor doesn't fall
+            collision_enabled=True,
+            bounciness=0.3,  # Moderate bounciness to prevent excessive bouncing
+            friction=0.4    # Moderate friction for stability
+        )
+        floor_obj = scene.add_physics_object(quad, floor_physics_props)
 
 
     window.set_scene(scene)
