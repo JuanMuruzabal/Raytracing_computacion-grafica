@@ -20,7 +20,8 @@ class PhysicsProperties:
                  friction: float = 0.3,
                  angular_friction: float = 0.1,
                  velocity: glm.vec3 = None,
-                 angular_velocity: glm.vec3 = None):
+                 angular_velocity: glm.vec3 = None,
+                 is_domino: bool = False):
         self.mass = mass
         self.gravity_enabled = gravity_enabled
         self.collision_enabled = collision_enabled
@@ -29,6 +30,7 @@ class PhysicsProperties:
         self.angular_friction = angular_friction  # Angular damping
         self.velocity = velocity or glm.vec3(0.0, 0.0, 0.0)
         self.angular_velocity = angular_velocity or glm.vec3(0.0, 0.0, 0.0)
+        self.is_domino = is_domino
 
         # Calculate moment of inertia for a cube (simplified)
         # I = (1/6) * mass * (width² + height² + depth²)
@@ -50,7 +52,8 @@ class PhysicsProperties:
             bounciness=self.bounciness,
             friction=self.friction,
             velocity=glm.vec3(self.velocity),
-            angular_velocity=glm.vec3(self.angular_velocity)
+            angular_velocity=glm.vec3(self.angular_velocity),
+            is_domino=self.is_domino
         )
 
 
@@ -762,7 +765,7 @@ class PhysicsWorld:
             if physics_obj.physics.is_sleeping or not physics_obj.physics.gravity_enabled:
                 continue
 
-            if "Domino" not in physics_obj.obj.name:
+            if not physics_obj.physics.is_domino:
                 continue
 
             rotation_z = physics_obj.obj.rotation.z
@@ -806,13 +809,13 @@ class PhysicsWorld:
             self.gravity_system.apply_gravity(physics_obj, dt)
 
             # SIN DAMPING para dominós - fricción CERO
-            if "Domino" in physics_obj.obj.name:
+            if physics_obj.physics.is_domino:
                 pass  # No aplicar ningún damping
             else:
                 physics_obj.physics.velocity *= 0.999
 
             # Damping angular reducido para objetos de rebote
-            if "Domino" in physics_obj.obj.name:
+            if physics_obj.physics.is_domino:
                 pass  # Sin fricción angular
             elif "Cube" in physics_obj.obj.name and ("LeftCube" in physics_obj.obj.name or "RightCube" in physics_obj.obj.name):
                 damping = 1.0 - (physics_obj.physics.angular_friction * 0.1)  # Reducir angular friction x10
@@ -822,7 +825,7 @@ class PhysicsWorld:
                 physics_obj.physics.angular_velocity *= damping
 
             # Limitar velocidades máximas MUY ALTAS para dominós
-            if "Domino" in physics_obj.obj.name:
+            if physics_obj.physics.is_domino:
                 v_mag = glm.length(physics_obj.physics.velocity)
                 if v_mag > 200.0:  # Límite x4 más alto
                     physics_obj.physics.velocity = (physics_obj.physics.velocity / v_mag) * 200.0
@@ -883,7 +886,7 @@ class PhysicsWorld:
             if obj1 and obj2:
                 contact_count += 1
                 # Debug: Check if both objects are dominoes
-                is_domino_collision = ("Domino" in obj1.obj.name and "Domino" in obj2.obj.name)
+                is_domino_collision = (obj1.physics.is_domino and obj2.physics.is_domino)
                 if is_domino_collision:
                     domino_contact_count += 1
                     print(f"DOMINO COLLISION: {obj1.obj.name} vs {obj2.obj.name}, penetration: {contact.penetration_depth}")
@@ -1003,8 +1006,8 @@ class PhysicsWorld:
         obj2_ang_speed = glm.length(obj2.physics.angular_velocity)
 
         # Detectar si son dominós
-        is_domino1 = "Domino" in obj1.obj.name
-        is_domino2 = "Domino" in obj2.obj.name
+        is_domino1 = obj1.physics.is_domino
+        is_domino2 = obj2.physics.is_domino
 
         # Si ambos son dominós, transferir MUCHO más momento
         if is_domino1 and is_domino2:
@@ -1135,7 +1138,7 @@ class PhysicsWorld:
         Cuando un dominó toca a otro, transfiere MUCHO más momento para asegurar
         que TODOS los dominós caigan en cadena.
         """
-        domino_objects = [po for po in self.physics_objects if "Domino" in po.obj.name]
+        domino_objects = [po for po in self.physics_objects if po.physics.is_domino]
         
         for i in range(len(domino_objects)):
             domino1 = domino_objects[i]

@@ -41,7 +41,8 @@ class SceneState:
                 "collision_enabled": physics_props.collision_enabled,
                 "bounciness": physics_props.bounciness,
                 "friction": physics_props.friction,
-                "angular_friction": physics_props.angular_friction
+                "angular_friction": physics_props.angular_friction,
+                "is_domino": physics_props.is_domino
             }
         }
         self.objects.append(obj_data)
@@ -195,7 +196,8 @@ class SceneManager:
                 collision_enabled=physics_data["collision_enabled"],
                 bounciness=physics_data["bounciness"],
                 friction=physics_data["friction"],
-                angular_friction=physics_data.get("angular_friction", 0.1)
+                angular_friction=physics_data.get("angular_friction", 0.1),
+                is_domino=physics_data.get("is_domino", False)
             )
 
             # Add to scene with physics

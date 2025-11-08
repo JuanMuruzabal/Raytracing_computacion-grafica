@@ -661,7 +661,8 @@ class RaySceneGPU(Scene):
                     bounciness=0.02,  # Almost no bounce
                     friction=0.5,  # Moderate friction
                     gravity_enabled=True,
-                    collision_enabled=True
+                    collision_enabled=True,
+                    is_domino=True  # Mark as domino for special collision logic
                 )
 
                 domino_obj = self.add_physics_object(cube, physics_props)
