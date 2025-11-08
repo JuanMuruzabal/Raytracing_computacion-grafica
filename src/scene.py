@@ -620,22 +620,72 @@ class RaySceneGPU(Scene):
                 self.add_physics_object(cube, physics_props)
 
         elif scene_type == "domino":
-            # Create a domino chain
+            # Create a domino chain - 10 rectangles in a row, first one tilted to start the chain reaction
             domino_count = 10
+            spacing = 0.8 # Spacing between dominoes (increased for better chain reaction)
+            start_x = -4.5  # Starting position
+
+            # Adjust camera to focus on domino area
+            self.camera.position = glm.vec3(0, 1, 6)  # Move camera closer
+            self.camera.target = glm.vec3(0, -1, 0)    # Look at domino area
+
+            # Create ground/floor first to ensure it's visible
+            from .quad import Quad
+            ground = Quad(position=glm.vec3(0, -3.0, 0), rotation=glm.vec3(-90, 0, 0),
+                         scale=glm.vec3(20, 20, 0.01), name="Ground", animated=False, hittable=True)
+            ground_physics_props = PhysicsProperties(
+                mass=1000000.0,  # Immovable
+                gravity_enabled=False,
+                collision_enabled=True,
+                bounciness=0.1,
+                friction=0.3
+            )
+            ground_result = self.add_physics_object(ground, ground_physics_props)
+            print(f"Ground created: {ground_result is not None}")
+
+            # Create dominoes
+            created_count = 0
             for i in range(domino_count):
-                x = i * 1.2 - 5  # Space them out
+                x = start_x + i * spacing
+                y = -1.5  # At ground level
+
                 from .cube import Cube
-                cube = Cube(position=glm.vec3(x, -2.0, 0), scale=glm.vec3(0.3, 1.0, 0.8))
+                cube = Cube(position=glm.vec3(x, y, 0), scale=glm.vec3(0.1, 1.5, 0.4), name=f"Domino_{i}")
+
+                # Special setup for the first domino - tilt it to start falling
+                if i == 0:
+                    cube.rotation.z = -35  # -25 degrees initial rotation
+
                 physics_props = PhysicsProperties(
-                    mass=0.5,
-                    bounciness=0.2,
-                    friction=0.6,  # Higher friction for stability
+                    mass=0.1,  # Very light
+                    bounciness=0.02,  # Almost no bounce
+                    friction=0.5,  # Moderate friction
                     gravity_enabled=True,
                     collision_enabled=True
                 )
-                self.add_physics_object(cube, physics_props)
 
+                domino_obj = self.add_physics_object(cube, physics_props)
+
+                # Give initial angular velocity to the first domino to start the rotation
+                if domino_obj and i == 0:
+                    domino_obj.physics.angular_velocity = glm.vec3(0.0, 0.0, -1.5)  # Initial angular velocity
+
+                if domino_obj:
+                    created_count += 1
+                    print(f"Created domino {i} at ({x:.1f}, {y:.1f}, 0)")
+                else:
+                    print(f"Failed to create domino {i}")
+
+            print(f"Successfully created {created_count} out of {domino_count} dominoes")
+
+        # Finalize physics setup after all objects are created
+        self.physics_world.finalize_physics_setup()
+
+        # Debug: Verify all objects were created
         print(f"Created realistic {scene_type} scene with {len(self.objects)} objects")
+        if scene_type == "domino":
+            print(f"Domino objects created: {[obj.name for obj in self.objects]}")
+            print(f"Physics objects: {len(self.physics_world.physics_objects)}")
 
     def export_physics_data(self, filename: str = None) -> str:
         """Export physics simulation data for analysis"""
@@ -668,6 +718,60 @@ class RaySceneGPU(Scene):
 
         print(f"Physics data exported to: {filename}")
         return filename
+
+    def create_bounce_scene(self):
+        """Crear escena de rebotes con 2 cubos y piso"""
+        print("Creando escena de rebotes...")
+
+        # Limpiar escena actual
+        self.new_scene("Bounce Scene")
+
+        # Crear piso inmóvil
+        from .quad import Quad
+        floor = Quad(position=glm.vec3(0, -3.0, 0), rotation=glm.vec3(-90, 0, 0),
+                    scale=glm.vec3(20, 20, 0.01), name="Floor", animated=False, hittable=True)
+        floor_physics_props = PhysicsProperties(
+            mass=1000000.0,  # Inmóvil
+            gravity_enabled=False,
+            collision_enabled=True,
+            bounciness=0.3,
+            friction=0.5
+        )
+        self.add_physics_object(floor, floor_physics_props)
+
+        # Crear cubo izquierdo (más alto)
+        from .cube import Cube
+        left_cube = Cube(position=glm.vec3(-2.0, 3.0, 0), name="LeftCube")
+        left_physics_props = PhysicsProperties(
+            mass=1.0,
+            gravity_enabled=True,
+            collision_enabled=True,
+            bounciness=0.1,  # Valor inicial normal
+            friction=0.3,  # Fricción normal
+            angular_friction=0.1  # Fricción angular normal
+        )
+        self.add_physics_object(left_cube, left_physics_props)
+
+        # Crear cubo derecho (más bajo)
+        right_cube = Cube(position=glm.vec3(2.0, 1.5, 0), name="RightCube")
+        right_physics_props = PhysicsProperties(
+            mass=1.5,  # Más pesado
+            gravity_enabled=True,
+            collision_enabled=True,
+            bounciness=0.1,  # Valor inicial normal
+            friction=0.3,  # Fricción normal
+            angular_friction=0.1  # Fricción angular normal
+        )
+        self.add_physics_object(right_cube, right_physics_props)
+
+        # Ajustar cámara para mejor vista
+        self.camera.position = glm.vec3(0, 2, 8)
+        self.camera.target = glm.vec3(0, 0, 0)
+
+        # Iniciar simulación automáticamente
+        self.set_mode("scene")
+
+        print("Escena de rebotes creada: cubo alto caerá sobre cubo bajo")
 
     def run_physics_benchmark(self, duration: float = 5.0) -> dict:
         """Run a physics performance benchmark"""

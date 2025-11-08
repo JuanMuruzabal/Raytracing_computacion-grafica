@@ -34,12 +34,12 @@ class PhysicsProperties:
         # I = (1/6) * mass * (width² + height² + depth²)
         # Assuming unit cube, I ≈ (1/6) * mass * 3 = 0.5 * mass
         self.moment_of_inertia = 0.5 * mass
-        # Sleeping parameters
+        # Sleeping parameters - ajustados para rebotes eternos
         self.is_sleeping = False
         self.sleep_timer = 0.0
-        self.sleep_linear_threshold = 0.05
-        self.sleep_angular_threshold = 0.02
-        self.time_to_sleep = 0.6
+        self.sleep_linear_threshold = 0.01  # Umbral más bajo para objetos de rebote
+        self.sleep_angular_threshold = 0.005  # Umbral más bajo para objetos de rebote
+        self.time_to_sleep = 2.0  # Tiempo más largo antes de dormir
 
     def copy(self):
         """Create a copy of these physics properties"""
@@ -690,8 +690,14 @@ class PhysicsWorld:
         physics_obj.save_state()  # Save initial state
         self.physics_objects.append(physics_obj)
         self.collision_manager.registerObject(physics_obj.fcl_object)
-        self.collision_manager.setup()
+        # Don't call setup() here - call finalize_physics_setup() once after all objects are added
+        print(f"Registered physics object: {obj.name}, total objects: {len(self.physics_objects)}")
         return physics_obj
+
+    def finalize_physics_setup(self):
+        """Finalize physics setup after all objects are registered"""
+        self.collision_manager.setup()
+        print(f"Physics setup finalized for {len(self.physics_objects)} objects")
 
     def remove_object(self, physics_obj: PhysicsObject):
         """Remove an object from the physics world"""
@@ -712,10 +718,13 @@ class PhysicsWorld:
         Fixed timestep physics update using a modern, stable approach.
         Follows the sequence: integrate velocities -> solve constraints -> integrate positions.
         """
-        # 1. Integrate velocities (apply gravity and damping)
+        # 1. Apply stability torque BEFORE damping
+        self._apply_stability_torque_all_objects(delta_time)
+
+        # 2. Integrate velocities (apply gravity and damping)
         self._integrate_velocities(delta_time)
 
-        # 2. Update FCL collision objects transforms
+        # 3. Update FCL collision objects transforms
         for obj in self.physics_objects:
             if not obj.physics.is_sleeping:
                 obj.fcl_transform.setTranslation(np.array(obj.obj.position))
@@ -723,24 +732,66 @@ class PhysicsWorld:
                 R = glm.mat3_cast(q)
                 obj.fcl_transform.setRotation(np.array(R))
                 obj.fcl_object.setTransform(obj.fcl_transform)
-        
+
         self.collision_manager.update()
 
-        # 3. Broad-phase collision detection using FCL
+        # 4. Broad-phase collision detection using FCL
         cdata = fcl.CollisionData()
         self.collision_manager.collide(cdata, fcl.defaultCollisionCallback)
 
-        # 4. Narrow-phase and constraint solving
+        # 5. Narrow-phase and constraint solving
         self._solve_constraints(cdata, self.solver_iterations)
 
-        # 5. Integrate positions
+        # 6. Integrate positions
         self._integrate_positions(delta_time)
 
-        # 5. Handle ground collision as a special case for stability
+        # 7. Handle ground collision as a special case for stability
         self._handle_ground_collisions()
 
-        # 6. Update sleeping states
+        # 7.5. NUEVO: Prevenir penetración entre dominós
+        self._prevent_domino_penetration()
+
+        # 8. Update sleeping states
         self._update_sleeping_states(delta_time)
+
+    def _apply_stability_torque_all_objects(self, dt: float):
+        """
+        Aplica torque de gravedad ULTRA-EXTREMO a los dominós para caída instantánea.
+        """
+        for physics_obj in self.physics_objects:
+            if physics_obj.physics.is_sleeping or not physics_obj.physics.gravity_enabled:
+                continue
+
+            if "Domino" not in physics_obj.obj.name:
+                continue
+
+            rotation_z = physics_obj.obj.rotation.z
+
+            # Ángulo crítico MÍNIMO: 0.1 grados (prácticamente cualquier inclinación)
+            critical_angle = glm.radians(0.1)
+            
+            # Límite: -89 grados
+            max_fall_angle = glm.radians(-89.0)
+
+            # Si está inclinado aunque sea mínimamente
+            if abs(rotation_z) > critical_angle and rotation_z > max_fall_angle:
+                # Dirección de caída
+                torque_direction = -1.0 if rotation_z < 0 else 1.0
+                
+                # TORQUE ULTRA-MASIVO - x200 más fuerte que el original
+                # Base: 10,000,000 (diez millones)
+                base_torque = 10000000.0
+                
+                # Multiplicador exponencial basado en el ángulo
+                angle_factor = abs(rotation_z) / glm.radians(1.0)  # Normalizado a 1 grado
+                torque_magnitude = base_torque * (1.0 + angle_factor * 100.0)
+                
+                # Límite muy alto
+                torque_magnitude = min(torque_magnitude, 50000000.0)
+                
+                # Aplicar torque
+                gravity_torque = glm.vec3(0.0, 0.0, torque_direction * torque_magnitude)
+                physics_obj.physics.angular_velocity += gravity_torque * dt
 
     def _integrate_velocities(self, dt: float):
         """
@@ -754,21 +805,39 @@ class PhysicsWorld:
             # Aplicar gravedad
             self.gravity_system.apply_gravity(physics_obj, dt)
 
-            # Damping de velocidad lineal
-            physics_obj.physics.velocity *= 0.995
+            # SIN DAMPING para dominós - fricción CERO
+            if "Domino" in physics_obj.obj.name:
+                pass  # No aplicar ningún damping
+            else:
+                physics_obj.physics.velocity *= 0.999
 
-            # Damping angular
-            damping = 1.0 - physics_obj.physics.angular_friction
-            physics_obj.physics.angular_velocity *= damping
+            # Damping angular reducido para objetos de rebote
+            if "Domino" in physics_obj.obj.name:
+                pass  # Sin fricción angular
+            elif "Cube" in physics_obj.obj.name and ("LeftCube" in physics_obj.obj.name or "RightCube" in physics_obj.obj.name):
+                damping = 1.0 - (physics_obj.physics.angular_friction * 0.1)  # Reducir angular friction x10
+                physics_obj.physics.angular_velocity *= damping
+            else:
+                damping = 1.0 - physics_obj.physics.angular_friction
+                physics_obj.physics.angular_velocity *= damping
 
-            # Limitar velocidades máximas
-            v_mag = glm.length(physics_obj.physics.velocity)
-            if v_mag > 50.0:
-                physics_obj.physics.velocity = (physics_obj.physics.velocity / v_mag) * 50.0
+            # Limitar velocidades máximas MUY ALTAS para dominós
+            if "Domino" in physics_obj.obj.name:
+                v_mag = glm.length(physics_obj.physics.velocity)
+                if v_mag > 200.0:  # Límite x4 más alto
+                    physics_obj.physics.velocity = (physics_obj.physics.velocity / v_mag) * 200.0
 
-            av_mag = glm.length(physics_obj.physics.angular_velocity)
-            if av_mag > 10.0:
-                physics_obj.physics.angular_velocity = (physics_obj.physics.angular_velocity / av_mag) * 10.0
+                av_mag = glm.length(physics_obj.physics.angular_velocity)
+                if av_mag > 100.0:  # Límite x10 más alto
+                    physics_obj.physics.angular_velocity = (physics_obj.physics.angular_velocity / av_mag) * 100.0
+            else:
+                v_mag = glm.length(physics_obj.physics.velocity)
+                if v_mag > 50.0:
+                    physics_obj.physics.velocity = (physics_obj.physics.velocity / v_mag) * 50.0
+
+                av_mag = glm.length(physics_obj.physics.angular_velocity)
+                if av_mag > 10.0:
+                    physics_obj.physics.angular_velocity = (physics_obj.physics.angular_velocity / av_mag) * 10.0
 
     def _integrate_positions(self, dt: float):
         """
@@ -784,8 +853,17 @@ class PhysicsWorld:
             # Integrar posición
             physics_obj.obj.position += physics_obj.physics.velocity * dt
 
+            # Física de estabilidad: aplicar torque adicional a objetos inestables
+            self._apply_stability_torque(physics_obj, dt)
+
             # Integrar rotación (euler integration - puede mejorarse con quaternions)
             physics_obj.obj.rotation += physics_obj.physics.angular_velocity * dt
+
+    def _apply_stability_torque(self, physics_obj: PhysicsObject, dt: float):
+        """
+        NO aplica damping durante la caída - deja que caigan libremente.
+        """
+        pass  # Eliminado completamente el damping artificial
 
     def _solve_constraints(self, cdata: fcl.CollisionData, iterations: int):
         """
@@ -796,11 +874,20 @@ class PhysicsWorld:
         
         geom_id_to_obj = {id(obj.fcl_geometry): obj for obj in self.physics_objects}
 
+        contact_count = 0
+        domino_contact_count = 0
         for contact in cdata.result.contacts:
             obj1 = geom_id_to_obj.get(id(contact.o1))
             obj2 = geom_id_to_obj.get(id(contact.o2))
 
             if obj1 and obj2:
+                contact_count += 1
+                # Debug: Check if both objects are dominoes
+                is_domino_collision = ("Domino" in obj1.obj.name and "Domino" in obj2.obj.name)
+                if is_domino_collision:
+                    domino_contact_count += 1
+                    print(f"DOMINO COLLISION: {obj1.obj.name} vs {obj2.obj.name}, penetration: {contact.penetration_depth}")
+
                 if obj1.physics.is_sleeping and obj2.physics.is_sleeping:
                     continue
 
@@ -823,6 +910,10 @@ class PhysicsWorld:
                     'accumulated_friction': glm.vec3(0, 0, 0)
                 })
 
+        # Debug: Print contact statistics
+        if contact_count > 0:
+            print(f"FCL detected {contact_count} total contacts, {domino_contact_count} domino contacts")
+
         # Iteratively solve the contacts
         for _ in range(iterations):
             for contact in contacts:
@@ -841,14 +932,6 @@ class PhysicsWorld:
 
         inv_mass1 = 1.0 / obj1.physics.mass if obj1.physics.mass < 100000.0 else 0.0
         inv_mass2 = 1.0 / obj2.physics.mass if obj2.physics.mass < 100000.0 else 0.0
-
-        # Custom cube-cube collision response: move both cubes apart
-        # Detect cubes by class name (assuming Cube class exists)
-        if obj1.obj.__class__.__name__ == "Cube" and obj2.obj.__class__.__name__ == "Cube":
-            # Move both cubes along the collision normal by half the penetration
-            move_vec = normal * (penetration * 0.5)
-            obj1.obj.position -= move_vec
-            obj2.obj.position += move_vec
 
         # Use the full inverse inertia tensor for correct rotational physics
         inv_I1 = obj1.get_inverse_inertia_tensor_world() if inv_mass1 > 0 else glm.mat3(0.0)
@@ -910,15 +993,56 @@ class PhysicsWorld:
             obj2.physics.velocity += friction_impulse * inv_mass2
             obj2.physics.angular_velocity += inv_I2 * glm.cross(r2, friction_impulse)
 
-    def _handle_ground_collisions(self):
-        """Handle collisions with ground-like objects.
+        # --- Angular momentum transfer for domino effect ---
+        # Transferencia MUY AGRESIVA de momento angular
+        angular_transfer_factor = 0.8  # Aumentado de 0.3 a 0.8
+        
+        obj1_speed = glm.length(obj1.physics.velocity)
+        obj2_speed = glm.length(obj2.physics.velocity)
+        obj1_ang_speed = glm.length(obj1.physics.angular_velocity)
+        obj2_ang_speed = glm.length(obj2.physics.angular_velocity)
 
-        Instead of using a hardcoded ground plane, we detect immovable
-        'ground' objects (very large mass or gravity disabled) and treat
-        their top AABB surface as the ground. This ensures objects rest on
-        the top face of the floor quad instead of penetrating and bouncing
-        off the bottom face.
-        """
+        # Detectar si son dominós
+        is_domino1 = "Domino" in obj1.obj.name
+        is_domino2 = "Domino" in obj2.obj.name
+
+        # Si ambos son dominós, transferir MUCHO más momento
+        if is_domino1 and is_domino2:
+            # If obj1 is moving/hitting obj2, transfer angular momentum
+            if obj1_speed > obj2_speed * 1.2 or obj1_ang_speed > obj2_ang_speed * 1.2:  # Umbral reducido
+                ang_transfer = obj1.physics.angular_velocity.z * angular_transfer_factor
+                
+                # Añadir un impulso base para asegurar que caiga
+                base_transfer = -20000.0 if ang_transfer < 0 else 20000.0
+                
+                if inv_mass2 > 0:
+                    obj2.physics.angular_velocity.z += ang_transfer + base_transfer
+                    obj1.physics.angular_velocity.z -= ang_transfer * 0.3
+
+            elif obj2_speed > obj1_speed * 1.2 or obj2_ang_speed > obj1_ang_speed * 1.2:
+                ang_transfer = obj2.physics.angular_velocity.z * angular_transfer_factor
+                
+                base_transfer = -20000.0 if ang_transfer < 0 else 20000.0
+                
+                if inv_mass1 > 0:
+                    obj1.physics.angular_velocity.z += ang_transfer + base_transfer
+                    obj2.physics.angular_velocity.z -= ang_transfer * 0.3
+        else:
+            # Transferencia normal para no-dominós
+            if obj1_speed > obj2_speed * 2.0 or obj1_ang_speed > obj2_ang_speed * 2.0:
+                ang_transfer = obj1.physics.angular_velocity.z * angular_transfer_factor
+                if inv_mass2 > 0:
+                    obj2.physics.angular_velocity.z += ang_transfer
+                    obj1.physics.angular_velocity.z -= ang_transfer * 0.5
+
+            elif obj2_speed > obj1_speed * 2.0 or obj2_ang_speed > obj1_ang_speed * 2.0:
+                ang_transfer = obj2.physics.angular_velocity.z * angular_transfer_factor
+                if inv_mass1 > 0:
+                    obj1.physics.angular_velocity.z += ang_transfer
+                    obj2.physics.angular_velocity.z -= ang_transfer * 0.5
+
+    def _handle_ground_collisions(self):
+        """Handle collisions with ground-like objects."""
 
         # Identify candidate ground objects: large mass or gravity disabled
         ground_candidates = []
@@ -1006,9 +1130,92 @@ class PhysicsWorld:
                         if abs(physics_obj.physics.velocity.y) < 0.1:
                             physics_obj.physics.velocity.y = 0.0
 
+    def _prevent_domino_penetration(self):
+        """
+        Cuando un dominó toca a otro, transfiere MUCHO más momento para asegurar
+        que TODOS los dominós caigan en cadena.
+        """
+        domino_objects = [po for po in self.physics_objects if "Domino" in po.obj.name]
+        
+        for i in range(len(domino_objects)):
+            domino1 = domino_objects[i]
+            
+            # Skip if sleeping
+            if domino1.physics.is_sleeping:
+                continue
+                
+            for j in range(i + 1, len(domino_objects)):
+                domino2 = domino_objects[j]
+                
+                # Get AABBs
+                aabb1 = domino1.get_cached_aabb()
+                aabb2 = domino2.get_cached_aabb()
+                
+                # Check if AABBs overlap
+                if not aabb1.intersects(aabb2):
+                    continue
+                
+                # Calculate penetration depth
+                overlap_x = min(aabb1.max.x, aabb2.max.x) - max(aabb1.min.x, aabb2.min.x)
+                overlap_y = min(aabb1.max.y, aabb2.max.y) - max(aabb1.min.y, aabb2.min.y)
+                overlap_z = min(aabb1.max.z, aabb2.max.z) - max(aabb1.min.z, aabb2.min.z)
+                
+                # Si hay contacto real (overlap muy pequeño para detectar apenas se tocan)
+                if overlap_x > 0.001 and overlap_y > 0.001 and overlap_z > 0.001:
+                    rot1_z = domino1.obj.rotation.z
+                    rot2_z = domino2.obj.rotation.z
+                    
+                    # El dominó que está más inclinado es el que está cayendo
+                    if abs(rot1_z) > abs(rot2_z) + 0.01:  # domino1 está cayendo (umbral reducido)
+                        current_angle = domino1.obj.rotation.z
+                        
+                        # Retroceder menos para mantener contacto
+                        domino1.obj.rotation.z = current_angle + glm.radians(1.0)  # Solo 1 grado
+                        
+                        # Reducir rotación pero no detener completamente
+                        domino1.physics.angular_velocity.z *= 0.1
+                        domino1.physics.velocity *= 0.5
+                        
+                        # Transferir MUCHO MÁS momento al siguiente dominó
+                        # Incluso si ya está inclinado
+                        if abs(rot2_z) < glm.radians(45.0):  # Umbral aumentado a 45 grados
+                            # Calcular impulso basado en la velocidad del dominó que cae
+                            base_impulse = -50000.0  # Impulso base MASIVO
+                            
+                            # Añadir impulso proporcional a la velocidad angular del que cae
+                            velocity_boost = abs(domino1.physics.angular_velocity.z) * 2.0
+                            
+                            total_impulse = base_impulse + velocity_boost
+                            
+                            # Aplicar impulso al siguiente dominó
+                            domino2.physics.angular_velocity.z = total_impulse
+                            domino2.physics.is_sleeping = False
+                            
+                            # También dar un pequeño empujón lineal
+                            push_direction = glm.normalize(domino2.obj.position - domino1.obj.position)
+                            domino2.physics.velocity += push_direction * 2.0
+                    
+                    elif abs(rot2_z) > abs(rot1_z) + 0.01:  # domino2 está cayendo
+                        current_angle = domino2.obj.rotation.z
+                        domino2.obj.rotation.z = current_angle + glm.radians(1.0)
+                        domino2.physics.angular_velocity.z *= 0.1
+                        domino2.physics.velocity *= 0.5
+                        
+                        if abs(rot1_z) < glm.radians(45.0):
+                            base_impulse = -50000.0
+                            velocity_boost = abs(domino2.physics.angular_velocity.z) * 2.0
+                            total_impulse = base_impulse + velocity_boost
+                            
+                            domino1.physics.angular_velocity.z = total_impulse
+                            domino1.physics.is_sleeping = False
+                            
+                            push_direction = glm.normalize(domino1.obj.position - domino2.obj.position)
+                            domino1.physics.velocity += push_direction * 2.0
+
     def _update_sleeping_states(self, delta_time: float):
         """
         Updates the sleep state of all objects based on their motion.
+        Objetos de rebote eterno tienen sleeping más difícil.
         """
         for obj in self.physics_objects:
             props = obj.physics
@@ -1018,12 +1225,19 @@ class PhysicsWorld:
             lin_vel_sq = glm.dot(props.velocity, props.velocity)
             ang_vel_sq = glm.dot(props.angular_velocity, props.angular_velocity)
 
-            lin_thresh_sq = props.sleep_linear_threshold ** 2
-            ang_thresh_sq = props.sleep_angular_threshold ** 2
+            # Para objetos de rebote eterno, usar umbrales más bajos y tiempo más largo
+            if "Cube" in obj.obj.name and ("LeftCube" in obj.obj.name or "RightCube" in obj.obj.name):
+                lin_thresh_sq = (props.sleep_linear_threshold * 0.1) ** 2  # Umbral 10x más bajo
+                ang_thresh_sq = (props.sleep_angular_threshold * 0.1) ** 2  # Umbral 10x más bajo
+                sleep_time = props.time_to_sleep * 5.0  # 5x más tiempo para dormir
+            else:
+                lin_thresh_sq = props.sleep_linear_threshold ** 2
+                ang_thresh_sq = props.sleep_angular_threshold ** 2
+                sleep_time = props.time_to_sleep
 
             if lin_vel_sq < lin_thresh_sq and ang_vel_sq < ang_thresh_sq:
                 props.sleep_timer += delta_time
-                if props.sleep_timer >= props.time_to_sleep:
+                if props.sleep_timer >= sleep_time:
                     props.is_sleeping = True
                     props.velocity = glm.vec3(0.0)
                     props.angular_velocity = glm.vec3(0.0)

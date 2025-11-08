@@ -30,6 +30,13 @@ class Window(pyglet.window.Window):
         self._debug_selection = True
         self._last_debug_print = 0.0
 
+        # Start screen
+        self.start_screen = True
+        self.start_screen_texture = self._load_start_screen_texture()
+
+        # Schedule start screen to disappear after 7 seconds
+        pyglet.clock.schedule_once(self._hide_start_screen, 7.0)
+
         pyglet.clock.schedule_interval(self.update, 1/60.0)
 
         # No sphere materials needed - using direct OBB
@@ -38,6 +45,11 @@ class Window(pyglet.window.Window):
         # Clear full window
         self.clear()
         self.ctx.clear(0.1, 0.1, 0.1)
+
+        # Check if we should render start screen
+        if self.start_screen:
+            self._render_start_screen()
+            return
 
         # Set viewport for 3D scene (left side)
         if self.gui:
@@ -246,6 +258,13 @@ class Window(pyglet.window.Window):
             self.keys.remove(symbol)
 
     def on_mouse_press(self, x, y, button, modifiers):
+        # Handle start screen clicks
+        if self.start_screen:
+            if button == pyglet.window.mouse.LEFT:
+                self.start_screen = False
+                print("Start screen dismissed, entering main scene")
+            return
+
         if self.scene is None or not self.gui:
             return
 
@@ -879,6 +898,129 @@ class Window(pyglet.window.Window):
             print("No objects selected in drag area")
 
 
+
+    def _render_start_screen(self):
+        """Render the full-screen start screen with the texture"""
+        if not self.start_screen_texture:
+            # Fallback: render a colored background if texture failed to load
+            self.ctx.clear(0.2, 0.4, 0.6, 1.0)  # Blue background
+            return
+
+        # Set full viewport
+        self.ctx.viewport = (0, 0, self.width, self.height)
+
+        # Create a simple textured quad shader
+        vertex_shader = """
+        #version 330
+        in vec2 in_pos;
+        in vec2 in_texcoord;
+        out vec2 texcoord;
+        void main() {
+            gl_Position = vec4(in_pos, 0.0, 1.0);
+            texcoord = in_texcoord;
+        }
+        """
+
+        fragment_shader = """
+        #version 330
+        uniform sampler2D u_texture;
+        in vec2 texcoord;
+        out vec4 out_color;
+        void main() {
+            out_color = texture(u_texture, texcoord);
+        }
+        """
+
+        program = self.ctx.program(vertex_shader=vertex_shader, fragment_shader=fragment_shader)
+
+        # Create full-screen quad vertices (NDC coordinates)
+        vertices = np.array([
+            -1.0, -1.0, 0.0, 0.0,  # Bottom-left
+             1.0, -1.0, 1.0, 0.0,  # Bottom-right
+             1.0,  1.0, 1.0, 1.0,  # Top-right
+            -1.0,  1.0, 0.0, 1.0   # Top-left
+        ], dtype='f4')
+
+        indices = np.array([0, 1, 2, 2, 3, 0], dtype='i4')
+
+        vbo = self.ctx.buffer(vertices.tobytes())
+        ibo = self.ctx.buffer(indices.tobytes())
+
+        vao = self.ctx.vertex_array(program, [(vbo, '2f 2f', 'in_pos', 'in_texcoord')], ibo)
+
+        # Bind texture
+        if hasattr(self.start_screen_texture, 'name'):
+            # If it's a Texture object, we need to create the OpenGL texture
+            try:
+                gl_texture = self.ctx.texture(
+                    (self.start_screen_texture.width, self.start_screen_texture.height),
+                    self.start_screen_texture.channels_amount,
+                    self.start_screen_texture.image_data.tobytes()
+                )
+                gl_texture.use(0)
+                program['u_texture'].value = 0
+            except:
+                # Fallback if texture creation fails
+                self.ctx.clear(0.2, 0.4, 0.6, 1.0)
+                return
+        else:
+            # Assume it's already an OpenGL texture
+            self.start_screen_texture.use(0)
+            program['u_texture'].value = 0
+
+        # Render the quad
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        vao.render()
+
+        # Clean up
+        vao.release()
+        ibo.release()
+        vbo.release()
+        program.release()
+        if 'gl_texture' in locals():
+            gl_texture.release()
+
+        self.ctx.enable(moderngl.DEPTH_TEST)
+
+    def _load_start_screen_texture(self):
+        """Load the logo.png for the start screen"""
+        try:
+            from PIL import Image
+            import os
+
+            texture_path = "logo.png"  # In the project root
+            if not os.path.isfile(texture_path):
+                print(f"Warning: {texture_path} not found, using fallback")
+                return None
+
+            img = Image.open(texture_path).convert('RGB')
+            # Flip the image vertically for correct OpenGL orientation
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+            width, height = img.size
+
+            # Resize if too large
+            max_size = 1024
+            if width > max_size or height > max_size:
+                img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                width, height = img.size
+
+            img_array = np.array(img, dtype=np.uint8)
+            from .texture import ImageData, Texture
+            image_data = ImageData(width, height, 3)
+            image_data.data = img_array
+
+            texture = Texture("start_screen", width, height, 3, image_data)
+            print(f"Loaded start screen texture: {width}x{height}")
+            return texture
+
+        except Exception as e:
+            print(f"Error loading start screen texture: {e}")
+            return None
+
+    def _hide_start_screen(self, dt):
+        """Hide the start screen after 7 seconds"""
+        self.start_screen = False
+        print("Start screen automatically hidden after 7 seconds")
 
     def run(self):
         pyglet.app.run()

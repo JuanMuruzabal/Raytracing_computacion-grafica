@@ -371,60 +371,38 @@ class SidePanel:
                                        color=(0.4, 0.6, 0.3, 1.0), hover_color=(0.5, 0.8, 0.4, 1.0))
         self.buttons.append(self.bounce_down_button)
 
-        # Fricción en columna 5 y 1 de la siguiente fila
-        param_y -= button_height + button_spacing
-        self.friction_up_button = Button("FRIC+", col5_x, param_y + (button_height + button_spacing), param_button_width, button_height,
-                                       color=(0.6, 0.4, 0.3, 1.0), hover_color=(0.8, 0.5, 0.4, 1.0))
-        self.buttons.append(self.friction_up_button)
-        
-        self.friction_down_button = Button("FRIC-", col1_x, param_y, param_button_width, button_height,
-                                         color=(0.6, 0.4, 0.3, 1.0), hover_color=(0.8, 0.5, 0.4, 1.0))
-        self.buttons.append(self.friction_down_button)
+
 
         # Botones de escenas en columnas 1-3
         advanced_y = self.physics_y - 12*(button_height + button_spacing)
         scene_button_width = button_width * 0.8  # Mismo ancho que los botones superiores
-
-        self.random_scene_button = Button("RANDOM", col1_x, advanced_y, scene_button_width, button_height * 0.9,
-                                        color=(0.4, 0.5, 0.6, 1.0), hover_color=(0.5, 0.7, 0.8, 1.0))
-        self.buttons.append(self.random_scene_button)
-        
-        self.stack_scene_button = Button("STACK", col2_x, advanced_y, scene_button_width, button_height * 0.9,
-                                       color=(0.5, 0.4, 0.6, 1.0), hover_color=(0.7, 0.5, 0.8, 1.0))
-        self.buttons.append(self.stack_scene_button)
-        
-        self.domino_scene_button = Button("DOMINO", col3_x, advanced_y, scene_button_width, button_height * 0.9,
-                                        color=(0.6, 0.4, 0.4, 1.0), hover_color=(0.8, 0.5, 0.5, 1.0))
-        self.buttons.append(self.domino_scene_button)
-
-        # Botones ambientales en columnas 4-5
-        env_y = advanced_y
-        self.wind_button = Button("WIND", col4_x, env_y, scene_button_width, button_height * 0.9,
-                                color=(0.3, 0.4, 0.6, 1.0), hover_color=(0.4, 0.6, 0.8, 1.0))
-        self.buttons.append(self.wind_button)
-        
-        self.air_resistance_button = Button("AIR", col5_x, env_y, scene_button_width, button_height * 0.9,
-                                          color=(0.3, 0.6, 0.4, 1.0), hover_color=(0.4, 0.8, 0.5, 1.0))
-        self.buttons.append(self.air_resistance_button)
 
         # Botones de rendimiento en columnas 1-2 de la siguiente fila
         perf_y = advanced_y - button_height - button_spacing
         self.optimize_button = Button("OPTIM", col1_x, perf_y, scene_button_width, button_height * 0.9,
                                     color=(0.5, 0.5, 0.3, 1.0), hover_color=(0.7, 0.7, 0.4, 1.0))
         self.buttons.append(self.optimize_button)
-        
+
         self.benchmark_button = Button("BENCH", col2_x, perf_y, scene_button_width, button_height * 0.9,
                                      color=(0.3, 0.5, 0.5, 1.0), hover_color=(0.4, 0.7, 0.7, 1.0))
         self.buttons.append(self.benchmark_button)
 
-        # Botón avanzado y exportar en columnas 3-4 de la misma fila
-        self.init_advanced_button = Button("ADV", col3_x, perf_y, scene_button_width, button_height * 0.9,
-                                         color=(0.6, 0.3, 0.6, 1.0), hover_color=(0.8, 0.4, 0.8, 1.0))
-        self.buttons.append(self.init_advanced_button)
+        # Botones de domino y rebote a la misma altura que bench
+        self.domino_scene_button = Button("DOMINO", col3_x, perf_y, scene_button_width, button_height * 0.9,
+                                        color=(0.6, 0.4, 0.4, 1.0), hover_color=(0.8, 0.5, 0.5, 1.0))
+        self.buttons.append(self.domino_scene_button)
 
-        self.export_button = Button("EXP", col4_x, perf_y, scene_button_width, button_height * 0.9,
-                                  color=(0.4, 0.3, 0.5, 1.0), hover_color=(0.6, 0.4, 0.7, 1.0))
-        self.buttons.append(self.export_button)
+        self.bounce_scene_button = Button("REBOTE", col4_x, perf_y, scene_button_width, button_height * 0.9,
+                                       color=(0.5, 0.3, 0.6, 1.0), hover_color=(0.7, 0.4, 0.8, 1.0))
+        self.buttons.append(self.bounce_scene_button)
+
+        # Botones ambientales en columnas 4-5
+        env_y = advanced_y
+
+        # Botón avanzado y exportar en columnas 3-4 de la misma fila
+
+
+
 
         # Calcular el scroll máximo necesario
         # El botón más bajo está en perf_y, necesitamos que sea visible
@@ -566,50 +544,30 @@ class SidePanel:
                     return None
                 elif button == self.bounce_up_button:
                     if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'set_global_bounciness'):
-                        self.window.scene.set_global_bounciness(0.9)
+                        # Aumentar rebote progresivamente de 0.1 a 0.9
+                        current_bounce = 0.1  # Valor inicial
+                        # Buscar el rebote actual de los cubos de rebote
+                        for physics_obj in self.window.scene.physics_world.physics_objects:
+                            if "Cube" in physics_obj.obj.name and ("LeftCube" in physics_obj.obj.name or "RightCube" in physics_obj.obj.name):
+                                current_bounce = physics_obj.physics.bounciness
+                                break
+                        # Aumentar en incrementos de 0.1 hasta 0.9
+                        new_bounce = min(0.9, current_bounce + 0.1)
+                        self.window.scene.set_global_bounciness(new_bounce)
                     return None
                 elif button == self.bounce_down_button:
                     if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'set_global_bounciness'):
                         self.window.scene.set_global_bounciness(0.1)
                     return None
-                elif button == self.friction_up_button:
-                    if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'set_global_friction'):
-                        self.window.scene.set_global_friction(0.8)
-                    return None
-                elif button == self.friction_down_button:
-                    if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'set_global_friction'):
-                        self.window.scene.set_global_friction(0.1)
-                    return None
-                elif button == self.random_scene_button:
-                    if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'create_realistic_scene'):
-                        try:
-                            # Primero limpiar la escena
-                            if hasattr(self.window.scene, 'clear_scene'):
-                                self.window.scene.clear_scene()
-                            # Luego crear un cubo por defecto antes de la escena aleatoria
-                            if hasattr(self.window.scene, 'add_default_cube'):
-                                self.window.scene.add_default_cube()
-                            # Finalmente crear la escena aleatoria
-                            self.window.scene.create_realistic_scene("random")
-                        except Exception as e:
-                            print(f"Error al crear escena aleatoria: {str(e)}")
-                    return None
-                elif button == self.stack_scene_button:
-                    if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'create_realistic_scene'):
-                        self.window.scene.create_realistic_scene("stack")
-                    return None
+
+
+
                 elif button == self.domino_scene_button:
                     if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'create_realistic_scene'):
                         self.window.scene.create_realistic_scene("domino")
                     return None
-                elif button == self.wind_button:
-                    if self.window and hasattr(self.window, 'scene'):
-                        print("Wind button clicked")
-                    return None
-                elif button == self.air_resistance_button:
-                    if self.window and hasattr(self.window, 'scene'):
-                        print("Air resistance button clicked")
-                    return None
+
+
                 elif button == self.optimize_button:
                     if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'optimize_physics'):
                         self.window.scene.optimize_physics()
@@ -620,15 +578,12 @@ class SidePanel:
                         if benchmark_result:
                             print(f"Benchmark: {benchmark_result.get('fps', 0):.1f} FPS")
                     return None
-                elif button == self.init_advanced_button:
-                    if self.window and hasattr(self.window, 'scene'):
-                        print("Advanced physics features")
+                elif button == self.bounce_scene_button:
+                    if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'create_bounce_scene'):
+                        self.window.scene.create_bounce_scene()
                     return None
-                elif button == self.export_button:
-                    if self.window and hasattr(self.window, 'scene') and hasattr(self.window.scene, 'export_physics_data'):
-                        export_file = self.window.scene.export_physics_data()
-                        print(f"Exported to: {export_file}")
-                    return None
+
+
 
         # Manejar flechas del selector
         if self.left_arrow.contains_point(x, y):
@@ -871,7 +826,7 @@ class SidePanel:
         # Título
         selector_title_scale = self._get_scaled_text_scale(0.8)
         self.text_renderer.render_text_at_position(
-            "SELECTOR:", -0.85, self.selector_y + 0.2,
+            "", -0.85, self.selector_y + 0.2,
             color=(0.8, 0.8, 0.9), scale=selector_title_scale
         )
 
@@ -1062,6 +1017,8 @@ class SidePanel:
         """Retornar textura actual"""
         return self.current_texture
 
+
+
     def get_scene_viewport(self):
         """Retornar viewport para escena 3D"""
         panel_width_pixels = int(self.total_width * self.panel_width_ratio)
@@ -1107,6 +1064,9 @@ class SimpleGUI:
     def handle_scroll(self, x, y, scroll_amount):
         """Manejar scroll del mouse"""
         return self.side_panel.handle_scroll(x, y, scroll_amount)
+
+    def is_mouse_over_resize_handle(self, x, y):
+        return self.side_panel.is_mouse_over_resize_handle(x, y)
 
     def is_mouse_over_resize_handle(self, x, y):
         return self.side_panel.is_mouse_over_resize_handle(x, y)

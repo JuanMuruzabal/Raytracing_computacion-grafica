@@ -1,6 +1,8 @@
 import sys
 from .window import Window
 
+import pyglet
+
 from .texture import Texture
 
 from .material import Material, StandardMaterial
@@ -101,11 +103,8 @@ def main():
 
 
     cube1 = Cube((2, 0, 5), (0, 0, 0), (1, 1, 1), name="Cube1")
-
     cube2 = Cube((-2, 0, 5), (0, 0, 0), (1, 1, 1), name="Cube2")
-
-    quad = Quad((0, -5, 0), (-90, 0, 0), (20, 20, 2), name="Floor", animated=False, hittable=True)
-
+    quad = Quad((0, -10, 0), (-90, 0, 0), (20, 20, 2), name="Floor", animated=False, hittable=True)
     sprite = Quad((0, 0, 0), (0, 0, 0), (10, 15, 1), name="Sprite", animated=False, hittable=False)
 
 
@@ -149,16 +148,32 @@ def main():
 
         # Add floor as physics object (immovable)
         floor_physics_props = PhysicsProperties(
-            mass=1000000.0,  # Very high mass to make it immovable
-            gravity_enabled=False,  # Floor doesn't fall
+            mass=1000000.0,  # Immovable
+            gravity_enabled=False,
             collision_enabled=True,
-            bounciness=0.3,  # Moderate bounciness to prevent excessive bouncing
-            friction=0.4    # Moderate friction for stability
+            bounciness=0.1,
+            friction=0.3
         )
         floor_obj = scene.add_physics_object(quad, floor_physics_props)
 
 
     window.set_scene(scene)
+
+    # Schedule automatic LOAD button simulation after 2 seconds
+    def auto_load_scene(dt):
+        # Simulate LOAD button click: get first available scene and load it
+        if hasattr(window, 'scene') and hasattr(window.scene, 'list_scenes') and hasattr(window.scene, 'load_scene'):
+            scenes = window.scene.list_scenes()
+            if scenes:
+                loaded = window.scene.load_scene(f"scenes/{scenes[0]}")
+                if loaded:
+                    print("Auto-loaded saved scene after 2 seconds (simulating LOAD button)")
+                else:
+                    print("Failed to auto-load saved scene")
+            else:
+                print("No saved scenes found for auto-load")
+
+    pyglet.clock.schedule_once(auto_load_scene, 2.0)
 
     window.run()
 
