@@ -2,6 +2,7 @@ import sys
 from .window import Window
 
 import pyglet
+import pyglet.image
 
 from .texture import Texture
 
@@ -76,7 +77,17 @@ def main():
     config = scene_configs[SCENE_TYPE]
 
 
-    window = Window(width=WIDTH, height=HEIGHT, caption=f"3D Editor - Scene | Controls - {SCENE_TYPE.upper()}")
+    window = Window(width=WIDTH, height=HEIGHT, caption="UNITYSITO")
+
+    # Set window icon
+    try:
+        # Load the favicon and create multiple sizes for better compatibility
+        icon = pyglet.image.load('favicon.png')
+        # Set multiple icon sizes for better compatibility
+        window.set_icon(icon)
+        print("Window icon set successfully with multiple sizes")
+    except Exception as e:
+        print(f"Could not load window icon: {e}")
 
 
     shader = ShaderProgram(window.ctx, 'shaders/basic.vert', 'shaders/basic.frag')
