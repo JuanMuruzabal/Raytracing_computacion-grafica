@@ -458,13 +458,28 @@ def _get_scaled_button_width(self):
 ```
 
 ### 6. Sistema de Física Avanzada
-**Descripción**: Se implementó un sistema completo de física 3D con colisiones, gravedad y propiedades materiales.
+**Descripción**: Se implementó un sistema especializado de física 3D optimizado para efectos de dominó y rebotes, eliminando fricción y otros elementos para lograr comportamientos específicos.
 
-**Componentes del sistema**:
-- **GravitySystem**: Maneja fuerzas gravitacionales
-- **CollisionSystem**: Detecta y resuelve colisiones entre objetos
-- **PhysicsWorld**: Coordina todos los sistemas físicos
-- **PhysicsProperties**: Propiedades físicas por objeto (masa, rebote, fricción)
+**Componentes principales**:
+- **GravitySystem**: Sistema de gravedad con torque ultra-agresivo para dominós
+- **CollisionSystem**: Sistema de colisiones con transferencia de momento angular especializada
+- **PhysicsWorld**: Mundo físico con límites de velocidad elevados para dominós
+- **PhysicsProperties**: Propiedades físicas con flag `is_domino` para comportamiento especial
+
+**Física de Dominós**:
+- Torque de gravedad extremo (10,000,000 base) para caída instantánea
+- Sin damping ni fricción para movimiento libre
+- Límites de velocidad altos (200 lineal, 100 angular)
+- Transferencia agresiva de momento angular (80% entre dominós)
+- Prevención de penetración entre dominós adyacentes
+
+**Implementación del algoritmo de Euler**:
+```python
+# En _integrate_positions de src/physics.py (líneas ~750-760)
+# Integrar rotación (euler integration)
+physics_obj.obj.rotation += physics_obj.physics.angular_velocity * dt
+```
+
 
 **Implementación técnica** (`src/physics.py`):
 ```python
@@ -520,22 +535,17 @@ def reset_physics(self):
 **Descripción**: Se implementaron escenas predefinidas para demostrar diferentes configuraciones físicas.
 
 **Escenas disponibles**:
-- **RANDOM**: Escena con objetos colocados aleatoriamente
-- **STACK**: Objetos apilados para demostrar estabilidad
-- **DOMINO**: Efecto dominó con objetos en fila
+- **REBOTE**: Escena que muestra física de rebote con gravedad
+- **DOMINO**: Escena que muestra física con momento angular y efecto dominó
 
 **Implementación técnica** (`src/scene.py`):
 ```python
 def create_realistic_scene(self, scene_type: str):
     """Create predefined physics scenes"""
-    if scene_type == "random":
-        # Colocar objetos en posiciones aleatorias
-        for i in range(10):
-            # Crear y posicionar objetos aleatoriamente
-    elif scene_type == "stack":
-        # Crear pila de objetos
-    elif scene_type == "domino":
+    if scene_type == "domino":
         # Crear fila de objetos para efecto dominó
+        # Configuración especializada para física de dominós
+    # REBOTE implementado en create_bounce_scene()
 ```
 
 ### 9. Sistema de Guardado y Carga de Escenas

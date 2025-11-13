@@ -1,0 +1,105 @@
+INFORME GENERAL DEL PROYECTO
+
+DESCRIPCIÓN DEL PROGRAMA
+
+Este proyecto representa una evolución significativa del motor de raytracing desarrollado anteriormente. Partiendo de una implementación básica de raytracing únicamente en CPU, se ha expandido la arquitectura para crear un motor gráfico completo que integra:
+
+- **Raytracing GPU avanzado** para renderizado en tiempo real de alta calidad
+- **Sistema de física 3D completo** con simulación de gravedad, colisiones y propiedades materiales
+- **Interfaz de edición interactiva** con panel lateral de herramientas para manipulación de escena
+- **Sistema de texturizado UV** para aplicación de imágenes realistas en objetos 3D
+- **Gestión avanzada de escenas** con modos de edición y simulación física
+- **Optimizaciones de rendimiento** para mantener fluidez en escenas complejas
+
+El programa transforma una herramienta de visualización estática en un entorno de modelado y simulación interactivo, manteniendo el rendimiento del raytracing en tiempo real mientras permite interacción fluida con la escena 3D.
+
+CAMBIOS DESTACADOS IMPLEMENTADOS
+
+1. **Interfaz de Usuario y Panel Lateral**
+   - Implementación completa usando Dear ImGui para controles intuitivos
+   - Panel lateral con herramientas de edición y configuración
+   - Sistema de coordenadas NDC para renderizado 2D integrado con OpenGL
+   - Arquitectura que permite configuraciones en tiempo real sin afectar rendimiento
+
+2. **Sistema de Selección y Manipulación de Objetos**
+   - Selección múltiple mediante arrastre del mouse (similar a editores 3D profesionales)
+   - Controles de movimiento, rotación y escalado con gizmos visuales
+   - Transformaciones precisas en espacio 3D con feedback visual
+   - Eliminación de selección por clicks debido a problemas de precisión
+
+3. **Controles de Cámara Interactivos**
+   - Movimiento suave con teclado (WASD + mouse)
+   - Rotación completa alrededor de ejes X, Y, Z
+   - Modos de herramienta diferenciados (cámara vs objeto)
+   - Navegación fluida por la escena 3D
+
+4. **Sistema de Física 3D Especializado**
+   - Arquitectura modular con GravitySystem, CollisionSystem y PhysicsWorld
+   - Física especializada para efectos de dominó con torque extremo (10M base)
+   - Transferencia agresiva de momento angular (80% entre objetos)
+   - Eliminación de fricción para movimientos libres y efectos realistas
+   - Algoritmo de integración semi-implícito de Euler para estabilidad
+
+5. **Sistema de Texturizado UV Completo**
+   - Cálculo de coordenadas UV por cara de cubo en GPU
+   - Integración completa con raytracer.comp usando GLSL
+   - Flag de material (reflectivity = -0.5) para identificar objetos texturizados
+   - Sistema de muestreo de texturas con verificación de estado
+   - Conversión PIL → numpy → float32 optimizada para GPU
+
+6. **Gestión de Escenas y Modos**
+   - Sistema de modos Editor/Escena para alternar entre edición y simulación
+   - Escenas predefinidas: REBOTE (física de rebote) y DOMINO (efecto dominó)
+   - Guardado/carga de estados completos de escena en JSON
+   - Controles físicos dinámicos (gravedad, rebote, play/pause/reset)
+
+7. **Arquitectura de Renderizado GPU**
+   - Raytracing compute shader con integración de texturas
+   - Buffers SSBO para matrices de transformación y materiales
+   - Sistema BVH para aceleración de raytracing
+   - Renderizado híbrido OpenGL + compute shaders
+
+PROBLEMAS CON RAYCASTING Y COLISIONES
+
+El sistema actual presenta limitaciones importantes en el manejo de raycasting y colisiones:
+
+- **raytracer.comp no maneja raycasting**: El shader de compute se enfoca únicamente en el renderizado de raytracing, pero no implementa lógica de intersección de rayos para selección de objetos o picking
+- **Ausencia de sistema de colisiones en GPU**: Las colisiones se resuelven únicamente en CPU usando FCL (Flexible Collision Library), generando cuello de botella en escenas complejas
+- **Problemas de precisión**: La selección de objetos mediante coordenadas de pantalla presenta inconsistencias debido a la falta de integración entre sistemas de coordenadas
+- **Limitaciones de escalabilidad**: El enfoque híbrido CPU/GPU genera problemas de sincronización y latencia en escenas con muchos objetos interactivos
+
+OPTIMIZACIONES IMPLEMENTADAS
+
+Para resolver problemas de rendimiento y estabilidad, se implementaron optimizaciones críticas:
+
+1. **Gestión Dinámica de Buffers SSBO**
+   - Reutilización de buffers GPU en lugar de creación/destrucción por frame
+   - Evita leaks de memoria VRAM/RAM que causaban crashes
+   - Actualización condicional del contenido sin recrear buffers
+
+2. **Límites de Objetos y Validación**
+   - Límite máximo de 100 objetos por defecto para prevenir overflow
+   - Validación en UI antes de agregar objetos
+   - Mensajes informativos cuando se alcanza el límite
+
+3. **Caché Inteligente para BVH**
+   - Reconstrucción de jerarquía únicamente cuando cambian objetos
+   - Comparación de estado entre frames para evitar cálculos redundantes
+   - Reutilización de buffers GPU para estructuras BVH
+
+4. **Actualización Condicional de GPU**
+   - Flags de cambio para detectar modificaciones en escena
+   - Reconstrucción selectiva de matrices y primitivas
+   - Optimización de transferencia CPU → GPU
+
+5. **Optimizaciones de Texturas**
+   - Downsampling automático a 512x512 píxeles máximo
+   - Caché inteligente para evitar reprocesamiento
+   - Validación de archivos de imagen corruptos
+   - Conversión optimizada PIL → GPU
+
+6. **Timestep Fijo para Física**
+   - Actualización física a 60 FPS constante
+   - Acumulador de tiempo para estabilidad
+   - Prevención de inestabilidad numérica en simulaciones complejas
+
